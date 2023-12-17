@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
+import java.util.Objects;
+import java.util.logging.Logger;
 
 import static java.lang.invoke.LambdaMetafactory.FLAG_BRIDGES;
 import static java.lang.invoke.LambdaMetafactory.FLAG_MARKERS;
@@ -20,6 +22,9 @@ import static java.lang.invoke.LambdaMetafactory.FLAG_SERIALIZABLE;
 import static java.util.Objects.requireNonNull;
 
 public class LambdaMetafactoryWrapper {
+    @SuppressWarnings("unused")
+    private static final Logger LOG = Logger.getLogger(LambdaMetafactoryWrapper.class.getSimpleName());
+
     public LambdaMetafactoryWrapper(MethodHandles.Lookup lookup) {
         this.lookup = lookup;
     }
@@ -30,7 +35,7 @@ public class LambdaMetafactoryWrapper {
 
     protected final MethodHandles.Lookup lookup;
 
-    public <T> T wrap(Executable implementation, MetafactoryParameters<T> parameters) {
+    public <T> T wrap(Executable implementation, Parameters<T> parameters) {
         if (implementation instanceof Method && !parameters.capturedParameters.isEmpty()
                 && !Modifier.isStatic(implementation.getModifiers())) {
             Class<?> receiverClass = parameters.capturedParameters.getFirst().getClass();
@@ -44,24 +49,26 @@ public class LambdaMetafactoryWrapper {
     }
 
     @SuppressWarnings("unchecked")
-    protected final <T> T wrapMethodHandleUncached(MethodHandle implementation, MetafactoryParameters<T> parameters) {
+    protected final <T> T wrapMethodHandleUncached(MethodHandle implementation, Parameters<T> parameters) {
         FunctionalInterfaceDescriptor descriptor = getDescriptor(parameters.functionalInterface);
-        MethodType type = descriptor.nonCapturingReturning;
-        if (!parameters.capturedParameters.isEmpty()) {
-            type = type.appendParameterTypes(
-                    parameters.capturedParameters.stream().map(Object::getClass).toArray(Class[]::new));
-        }
+        MethodType factoryType = MethodType.methodType(
+                parameters.functionalInterface,
+                parameters.capturedParameters.stream().map(Object::getClass).toArray(Class[]::new));
+        MethodType implementationType = implementation.type().dropParameterTypes(0,
+                parameters.capturedParameters.size());
+        MethodType descriptorType = descriptor.methodType.dropParameterTypes(0,
+                Math.max(parameters.capturedParameters.size(), 1));
         try {
             CallSite callSite;
             if (parameters.bridgeOverloadTypes.isEmpty() && parameters.markerInterfaces.isEmpty()
                     && !parameters.serializable) {
-                callSite = LambdaMetafactory.metafactory(lookup, descriptor.methodName, type, descriptor.methodType,
-                        implementation, implementation.type());
+                callSite = LambdaMetafactory.metafactory(lookup, descriptor.methodName, factoryType,
+                        descriptorType, implementation, implementationType);
             } else {
                 ArrayList<Object> additionalParameters = new ArrayList<>(4);
-                additionalParameters.add(descriptor.methodType);
+                additionalParameters.add(descriptorType);
                 additionalParameters.add(implementation);
-                additionalParameters.add(implementation.type());
+                additionalParameters.add(implementationType);
                 additionalParameters.add(0);
                 int flags = 0;
                 if (parameters.serializable) {
@@ -81,7 +88,7 @@ public class LambdaMetafactoryWrapper {
                     additionalParameters.addAll(parameters.bridgeOverloadTypes);
                 }
                 additionalParameters.set(3, flags);
-                callSite = LambdaMetafactory.altMetafactory(lookup, descriptor.methodName, type,
+                callSite = LambdaMetafactory.altMetafactory(lookup, descriptor.methodName, factoryType,
                         additionalParameters.toArray());
             }
             return (T) callSite.getTarget().invokeWithArguments(parameters.capturedParameters);
@@ -90,7 +97,7 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
-    public <T> T wrapMethodHandle(MethodHandle implementation, MetafactoryParameters<T> parameters) {
+    public <T> T wrapMethodHandle(MethodHandle implementation, Parameters<T> parameters) {
         return wrapMethodHandleUncached(implementation, parameters);
     }
 
@@ -116,15 +123,28 @@ public class LambdaMetafactoryWrapper {
                     abstractMethods.size());
         }
         Method abstractMethod = abstractMethods.getFirst();
-        MethodType abstractMethodType = MethodType.methodType(abstractMethod.getReturnType(),
-                abstractMethod.getParameterTypes());
-        return new FunctionalInterfaceDescriptor(abstractMethodType, abstractMethod.getName(), MethodType.methodType(functionalInterface));
+        MethodType abstractMethodType = null;
+        try {
+            abstractMethodType = lookup.unreflect(abstractMethod).type();
+        } catch (IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
+        return new FunctionalInterfaceDescriptor(abstractMethodType, abstractMethod.getName(),
+                MethodType.methodType(functionalInterface));
     }
 
     public <T> T wrap(Executable implementation, Class<? super T> functionalInterface) {
-        return wrap(implementation, MetafactoryParameters.<T>builder()
+        return wrap(implementation, Parameters.<T>builder()
                 .functionalInterface(functionalInterface)
                 .build());
+    }
+
+    private static class DefaultInstanceLazyLoader {
+        static LambdaMetafactoryWrapper DEFAULT_INSTANCE = new LambdaMetafactoryWrapper(MethodHandles.publicLookup());
+    }
+
+    public static LambdaMetafactoryWrapper getDefaultInstance() {
+        return DefaultInstanceLazyLoader.DEFAULT_INSTANCE;
     }
 
     protected record FunctionalInterfaceDescriptor(
@@ -133,18 +153,18 @@ public class LambdaMetafactoryWrapper {
             MethodType nonCapturingReturning) {
     }
 
-    public record MetafactoryParameters<T>(
+    public record Parameters<T>(
             Class<? super T> functionalInterface,
             boolean serializable,
             List<MethodType> bridgeOverloadTypes,
             List<Object> capturedParameters,
             List<Class<?>> markerInterfaces
     ) {
-        public static <T> MetafactoryParametersBuilder<T> builder() {
-            return new MetafactoryParametersBuilder<>();
+        public static <T> Builder<T> builder() {
+            return new Builder<>();
         }
 
-        public static class MetafactoryParametersBuilder<T> {
+        public static class Builder<T> {
             // Defaults
             private boolean serializable = false;
             private final ArrayList<MethodType> bridgeOverloadTypes = new ArrayList<>();
@@ -152,67 +172,67 @@ public class LambdaMetafactoryWrapper {
             private final ArrayList<Class<?>> markerInterfaces = new ArrayList<>();
             private Class<? super T> functionalInterface;
 
-            MetafactoryParametersBuilder() {
+            Builder() {
             }
 
-            public MetafactoryParametersBuilder<T> functionalInterface(Class<? super T> functionalInterface) {
+            public Builder<T> functionalInterface(Class<? super T> functionalInterface) {
                 this.functionalInterface = requireNonNull(functionalInterface);
                 return this;
             }
 
-            public MetafactoryParametersBuilder<T> serializable(boolean serializable) {
+            public Builder<T> serializable(boolean serializable) {
                 this.serializable = serializable;
                 return this;
             }
 
             @SuppressWarnings("UnusedReturnValue")
-            public MetafactoryParametersBuilder<T> addMarkerInterface(Class<?> markerInterface) {
+            public Builder<T> addMarkerInterface(Class<?> markerInterface) {
                 markerInterfaces.add(requireNonNull(markerInterface));
                 return this;
             }
 
-            public MetafactoryParametersBuilder<T> addMarkerInterfaces(Collection<? extends Class<?>> markerInterfaces) {
+            public Builder<T> addMarkerInterfaces(Collection<? extends Class<?>> markerInterfaces) {
                 this.markerInterfaces.addAll(markerInterfaces);
                 return this;
             }
 
-            public MetafactoryParametersBuilder<T> clearMarkerInterfaces() {
+            public Builder<T> clearMarkerInterfaces() {
                 this.markerInterfaces.clear();
                 return this;
             }
 
-            public MetafactoryParametersBuilder<T> addBridgeOverload(MethodType bridgeOverloadType) {
+            public Builder<T> addBridgeOverload(MethodType bridgeOverloadType) {
                 this.bridgeOverloadTypes.add(requireNonNull(bridgeOverloadType));
                 return this;
             }
 
-            public MetafactoryParametersBuilder<T> addBridgeOverloads(Collection<? extends MethodType> bridgeOverloadTypes) {
+            public Builder<T> addBridgeOverloads(Collection<? extends MethodType> bridgeOverloadTypes) {
                 this.bridgeOverloadTypes.addAll(bridgeOverloadTypes);
                 return this;
             }
 
-            public MetafactoryParametersBuilder<T> clearBridgeOverloads() {
+            public Builder<T> clearBridgeOverloads() {
                 this.bridgeOverloadTypes.clear();
                 return this;
             }
 
-            public MetafactoryParametersBuilder<T> addCapturedParameter(Object capturedParameter) {
+            public Builder<T> addCapturedParameter(Object capturedParameter) {
                 capturedParameters.add(capturedParameter);
                 return this;
             }
 
-            public MetafactoryParametersBuilder<T> capturedParameters(Collection<?> capturedParameters) {
+            public Builder<T> capturedParameters(Collection<?> capturedParameters) {
                 this.capturedParameters.addAll(capturedParameters);
                 return this;
             }
 
-            public MetafactoryParametersBuilder<T> clearCapturedParameters() {
+            public Builder<T> clearCapturedParameters() {
                 this.capturedParameters.clear();
                 return this;
             }
 
-            public LambdaMetafactoryWrapper.MetafactoryParameters<T> build() {
-                return new LambdaMetafactoryWrapper.MetafactoryParameters<>(
+            public Parameters<T> build() {
+                return new Parameters<>(
                         this.functionalInterface,
                         this.serializable,
                         this.bridgeOverloadTypes,
@@ -220,5 +240,16 @@ public class LambdaMetafactoryWrapper {
                         this.markerInterfaces);
             }
         }
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(lookup, getClass());
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        return (obj == this) || obj != null &&
+                (obj.getClass() == getClass() && lookup == ((LambdaMetafactoryWrapper)obj).lookup);
     }
 }

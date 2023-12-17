@@ -29,10 +29,12 @@ public class CachingLambdaMetafactoryWrapper extends LambdaMetafactoryWrapper {
         classLoadersThisClassCannotOutlast.add(null); // for bootstrap CL
         classLoadersThisClassCannotOutlast.add(ClassLoader.getPlatformClassLoader());
         classLoadersThisClassCannotOutlast.add(ClassLoader.getSystemClassLoader());
-        ClassLoader myLoader = CachingLambdaMetafactoryWrapper.class.getClassLoader();
-        while (!classLoadersThisClassCannotOutlast.contains(myLoader)) {
-            classLoadersThisClassCannotOutlast.add(myLoader);
-            myLoader = myLoader.getParent();
+        if (isReferencedByClassLoader(CachingLambdaMetafactoryWrapper.class)) {
+            ClassLoader myLoader = CachingLambdaMetafactoryWrapper.class.getClassLoader();
+            while (!classLoadersThisClassCannotOutlast.contains(myLoader)) {
+                classLoadersThisClassCannotOutlast.add(myLoader);
+                myLoader = myLoader.getParent();
+            }
         }
         CLASS_LOADERS_THIS_CLASS_CANNOT_OUTLAST = classLoadersThisClassCannotOutlast;
     }
@@ -40,11 +42,11 @@ public class CachingLambdaMetafactoryWrapper extends LambdaMetafactoryWrapper {
     private static class ClassLoaderSpecificCache {
         final ConcurrentHashMap<Class<?>, FunctionalInterfaceDescriptor> descriptors = new ConcurrentHashMap<>();
         final ConcurrentHashMap<Executable, MethodHandle> unreflected = new ConcurrentHashMap<>();
-        final ConcurrentHashMap<Executable, Map<MetafactoryParameters<?>, Object>> cachedWrappers
+        final ConcurrentHashMap<Executable, Map<Parameters<?>, Object>> cachedWrappers
                 = new ConcurrentHashMap<>();
 
-        Object computeWrapperIfAbsent(Executable implementation, MetafactoryParameters<?> parameters,
-                          BiFunction<Executable, MetafactoryParameters<?>, Object> wrappingFunction) {
+        Object computeWrapperIfAbsent(Executable implementation, Parameters<?> parameters,
+                          BiFunction<Executable, Parameters<?>, Object> wrappingFunction) {
             return cachedWrappers.computeIfAbsent(implementation, impl -> newThreadSafeWeakKeyMap())
                     .computeIfAbsent(parameters, params -> wrappingFunction.apply(implementation, params));
         }
@@ -57,9 +59,9 @@ public class CachingLambdaMetafactoryWrapper extends LambdaMetafactoryWrapper {
             = newThreadSafeWeakKeyMap();
     private static final Map<Executable, MethodHandle> ANON_AND_HIDDEN_UNREFLECTED
             = newThreadSafeWeakKeyMap();
-    private static final Map<Executable, Map<MetafactoryParameters<?>, Object>> ANON_AND_HIDDEN_WRAPPERS
+    private static final Map<Executable, Map<Parameters<?>, Object>> ANON_AND_HIDDEN_WRAPPERS
             = newThreadSafeWeakKeyMap();
-    private static final Map<MethodHandle, Map<MetafactoryParameters<?>, Object>> METHOD_HANDLE_WRAPPERS
+    private static final Map<MethodHandle, Map<Parameters<?>, Object>> METHOD_HANDLE_WRAPPERS
             = newThreadSafeWeakKeyMap();
 
     public CachingLambdaMetafactoryWrapper() {
@@ -70,9 +72,18 @@ public class CachingLambdaMetafactoryWrapper extends LambdaMetafactoryWrapper {
         super(lookup);
     }
 
+    private static class DefaultInstanceLazyLoader {
+        static CachingLambdaMetafactoryWrapper DEFAULT_INSTANCE
+                = new CachingLambdaMetafactoryWrapper(MethodHandles.publicLookup());
+    }
+
+    public static CachingLambdaMetafactoryWrapper defaultInstance() {
+        return DefaultInstanceLazyLoader.DEFAULT_INSTANCE;
+    }
+
     @SuppressWarnings("unchecked")
     @Override
-    public <T> T wrapMethodHandle(MethodHandle implementation, MetafactoryParameters<T> parameters) {
+    public <T> T wrapMethodHandle(MethodHandle implementation, Parameters<T> parameters) {
         return (T) METHOD_HANDLE_WRAPPERS
                 .computeIfAbsent(implementation, impl -> newThreadSafeWeakKeyMap())
                 .computeIfAbsent(parameters, params -> wrapMethodHandleUncached(implementation, params));
@@ -88,9 +99,9 @@ public class CachingLambdaMetafactoryWrapper extends LambdaMetafactoryWrapper {
 
     @SuppressWarnings("unchecked")
     @Override
-    public <T> T wrap(Executable implementation, MetafactoryParameters<T> parameters) {
+    public <T> T wrap(Executable implementation, Parameters<T> parameters) {
         Class<?> declaringClass = implementation.getDeclaringClass();
-        if (isNotReferencedByClassLoader(declaringClass)) {
+        if (!isReferencedByClassLoader(declaringClass)) {
             return (T) ANON_AND_HIDDEN_WRAPPERS
                     .computeIfAbsent(implementation, impl -> newThreadSafeWeakKeyMap())
                     .computeIfAbsent(parameters, params -> super.wrap(implementation, params));
@@ -99,8 +110,8 @@ public class CachingLambdaMetafactoryWrapper extends LambdaMetafactoryWrapper {
                 .computeWrapperIfAbsent(implementation, parameters, super::wrap);
     }
 
-    private static boolean isNotReferencedByClassLoader(Class<?> declaringClass) {
-        return declaringClass.isAnonymousClass() || declaringClass.isHidden();
+    private static boolean isReferencedByClassLoader(Class<?> declaringClass) {
+        return !declaringClass.isAnonymousClass() && !declaringClass.isHidden();
     }
 
     private static <K, V> Map<K, V> newThreadSafeWeakKeyMap() {
@@ -109,7 +120,7 @@ public class CachingLambdaMetafactoryWrapper extends LambdaMetafactoryWrapper {
 
     @Override
     protected <T> FunctionalInterfaceDescriptor getDescriptor(Class<? super T> functionalInterface) {
-        if (isNotReferencedByClassLoader(functionalInterface)) {
+        if (!isReferencedByClassLoader(functionalInterface)) {
             return ANON_AND_HIDDEN_DESCRIPTORS.computeIfAbsent(functionalInterface, super::getDescriptor);
         }
         return getClassLoaderSpecificCache(functionalInterface).descriptors
@@ -119,7 +130,7 @@ public class CachingLambdaMetafactoryWrapper extends LambdaMetafactoryWrapper {
     @Override
     protected MethodHandle getUnreflectedImplementation(Executable implementation) {
         Class<?> declaringClass = implementation.getDeclaringClass();
-        if (isNotReferencedByClassLoader(declaringClass)) {
+        if (!isReferencedByClassLoader(declaringClass)) {
             return ANON_AND_HIDDEN_UNREFLECTED.computeIfAbsent(implementation, super::getUnreflectedImplementation);
         }
         return getClassLoaderSpecificCache(declaringClass)
