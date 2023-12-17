@@ -19,7 +19,7 @@ public class Main {
         for (int i = 0; i < 5; i++) {
             greet.run();
         }
-        System.out.println("Done testing wrapStatic");
+        System.out.println("Done testing wrap");
         Consumer<Main> greetWithInstance = wrapper.wrap(Main.class.getMethod("greetWithInstance"), Consumer.class);
         Main instance = new Main();
         for (int i = 0; i < 5; i++) {
