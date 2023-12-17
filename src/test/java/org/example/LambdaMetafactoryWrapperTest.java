@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.invoke.MethodHandles;
 import java.util.function.Function;
+import java.util.function.IntFunction;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
 
@@ -19,9 +20,17 @@ class LambdaMetafactoryWrapperTest {
         return "Hello World";
     }
 
+    private static String getGreetingForInt(int i) {
+        return "Hello, my favorite number is " + i;
+    }
+
     private static class InstanceTester {
         private String getGreetingFromInstance() {
             return getGreeting();
+        }
+
+        private String getGreetingFor(double d) {
+            return "Hello, my favorite number is " + d;
         }
     }
 
@@ -56,5 +65,28 @@ class LambdaMetafactoryWrapperTest {
         builder.addCapturedParameter(tester);
         assertSame(getGreeting(), createWrapper()
                 .wrap(InstanceTester.class.getDeclaredMethod("getGreetingFromInstance"), builder.build()).get());
+    }
+
+    @Test
+    public void testStaticMethodCapturing() throws NoSuchMethodException {
+        LambdaMetafactoryWrapper.Parameters.Builder<Supplier<String>>
+                builder = LambdaMetafactoryWrapper.Parameters.builder();
+        builder.functionalInterface(Supplier.class);
+        builder.addCapturedParameter(5);
+        assertNotNull(createWrapper()
+                .wrap(LambdaMetafactoryWrapperTest.class.getDeclaredMethod("getGreetingForInt", int.class),
+                        builder.build()).get());
+    }
+
+    @Test
+    public void testInstanceMethodCapturingInstanceAndParameter() throws NoSuchMethodException {
+        LambdaMetafactoryWrapper.Parameters.Builder<Supplier<String>>
+                builder = LambdaMetafactoryWrapper.Parameters.builder();
+        builder.functionalInterface(Supplier.class);
+        InstanceTester tester = new InstanceTester();
+        builder.addCapturedParameter(tester);
+        builder.addCapturedParameter(3.141);
+        assertNotNull(getGreeting(), createWrapper()
+                .wrap(InstanceTester.class.getDeclaredMethod("getGreetingFor", double.class), builder.build()).get());
     }
 }

@@ -51,13 +51,17 @@ public class LambdaMetafactoryWrapper {
     @SuppressWarnings("unchecked")
     protected final <T> T wrapMethodHandleUncached(MethodHandle implementation, Parameters<T> parameters) {
         FunctionalInterfaceDescriptor descriptor = getDescriptor(parameters.functionalInterface);
-        MethodType factoryType = MethodType.methodType(
-                parameters.functionalInterface,
-                parameters.capturedParameters.stream().map(Object::getClass).toArray(Class[]::new));
+        Class<?>[] capturedTypes = parameters.capturedParameters.stream().map(Object::getClass).toArray(Class[]::new);
         MethodType implementationType = implementation.type().dropParameterTypes(0,
                 parameters.capturedParameters.size());
-        MethodType descriptorType = descriptor.methodType.dropParameterTypes(0,
-                Math.max(parameters.capturedParameters.size(), 1));
+        for (int i = 0; i < parameters.capturedParameters.size(); i++) {
+            Class<?> implType = implementation.type().parameterType(i);
+            if (implType.isPrimitive()) {
+                capturedTypes[i] = implType;
+            }
+        }
+        MethodType factoryType = MethodType.methodType(parameters.functionalInterface, capturedTypes);
+        MethodType descriptorType = descriptor.methodType;
         try {
             CallSite callSite;
             if (parameters.bridgeOverloadTypes.isEmpty() && parameters.markerInterfaces.isEmpty()
@@ -129,7 +133,7 @@ public class LambdaMetafactoryWrapper {
         } catch (IllegalAccessException e) {
             throw new RuntimeException(e);
         }
-        return new FunctionalInterfaceDescriptor(abstractMethodType, abstractMethod.getName(),
+        return new FunctionalInterfaceDescriptor(abstractMethodType.dropParameterTypes(0, 1), abstractMethod.getName(),
                 MethodType.methodType(functionalInterface));
     }
 
