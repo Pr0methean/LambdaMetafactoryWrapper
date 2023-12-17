@@ -5,6 +5,7 @@ import java.lang.invoke.LambdaMetafactory;
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
+import java.lang.reflect.Array;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Executable;
 import java.lang.reflect.Method;
@@ -15,7 +16,6 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
 import java.util.logging.Logger;
-
 import static java.lang.invoke.LambdaMetafactory.FLAG_BRIDGES;
 import static java.lang.invoke.LambdaMetafactory.FLAG_MARKERS;
 import static java.lang.invoke.LambdaMetafactory.FLAG_SERIALIZABLE;
@@ -51,13 +51,33 @@ public class LambdaMetafactoryWrapper {
     @SuppressWarnings("unchecked")
     protected final <T> T wrapMethodHandleUncached(MethodHandle implementation, Parameters<T> parameters) {
         FunctionalInterfaceDescriptor descriptor = getDescriptor(parameters.functionalInterface);
-        Class<?>[] capturedTypes = parameters.capturedParameters.stream().map(Object::getClass).toArray(Class[]::new);
-        MethodType implementationType = implementation.type().dropParameterTypes(0,
-                parameters.capturedParameters.size());
-        for (int i = 0; i < parameters.capturedParameters.size(); i++) {
-            Class<?> implType = implementation.type().parameterType(i);
-            if (implType.isPrimitive()) {
-                capturedTypes[i] = implType;
+        MethodType implType = implementation.type();
+        final int implParamCount = implType.parameterCount();
+        List<Object> capturedParameters = parameters.capturedParameters;
+        final int capturedParamCount = capturedParameters.size();
+        if (implParamCount > 0) {
+            Class<?> lastImplParamType = implType.parameterType(implParamCount - 1);
+            if (lastImplParamType.isArray()
+                    && (capturedParameters.isEmpty()
+                    || !capturedParameters.getLast().getClass().isArray())
+            ) {
+                final int varargsLength = capturedParamCount - implParamCount + 1;
+                Object varargs = Array.newInstance(lastImplParamType.componentType(), varargsLength);
+                for (int i = 0; i < varargsLength; i++) {
+                    Array.set(varargs, i, capturedParameters.get(i + implParamCount - 1));
+                }
+                capturedParameters = new ArrayList<>(capturedParameters.subList(0, implParamCount));
+                capturedParameters.set(implParamCount - 1, varargs);
+            }
+        }
+        Class<?>[] capturedTypes = capturedParameters.stream().map(Object::getClass).toArray(Class[]::new);
+        final int paramsReplacedWithCaptures = Math.min(capturedParamCount, implParamCount);
+        MethodType implementationType = implType.dropParameterTypes(0,
+                paramsReplacedWithCaptures);
+        for (int i = 0; i < paramsReplacedWithCaptures; i++) {
+            Class<?> implParamType = implType.parameterType(i);
+            if (implParamType.isPrimitive()) {
+                capturedTypes[i] = implParamType;
             }
         }
         MethodType factoryType = MethodType.methodType(parameters.functionalInterface, capturedTypes);
@@ -95,7 +115,7 @@ public class LambdaMetafactoryWrapper {
                 callSite = LambdaMetafactory.altMetafactory(lookup, descriptor.methodName, factoryType,
                         additionalParameters.toArray());
             }
-            return (T) callSite.getTarget().invokeWithArguments(parameters.capturedParameters);
+            return (T) callSite.getTarget().invokeWithArguments(capturedParameters);
         } catch (Throwable t) {
             throw (t instanceof RuntimeException) ? (RuntimeException) t : new RuntimeException(t);
         }
@@ -138,8 +158,7 @@ public class LambdaMetafactoryWrapper {
     }
 
     public <T> T wrap(Executable implementation, Class<? super T> functionalInterface) {
-        return wrap(implementation, Parameters.<T>builder()
-                .functionalInterface(functionalInterface)
+        return wrap(implementation, Parameters.<T>builder(functionalInterface)
                 .build());
     }
 
@@ -164,8 +183,8 @@ public class LambdaMetafactoryWrapper {
             List<Object> capturedParameters,
             List<Class<?>> markerInterfaces
     ) {
-        public static <T> Builder<T> builder() {
-            return new Builder<>();
+        public static <T> Builder<T> builder(Class<? super T> functionalInterface) {
+            return new Builder<>(functionalInterface);
         }
 
         public static class Builder<T> {
@@ -174,14 +193,10 @@ public class LambdaMetafactoryWrapper {
             private final ArrayList<MethodType> bridgeOverloadTypes = new ArrayList<>();
             private final ArrayList<Object> capturedParameters = new ArrayList<>(); // may include nulls
             private final ArrayList<Class<?>> markerInterfaces = new ArrayList<>();
-            private Class<? super T> functionalInterface;
+            private final Class<? super T> functionalInterface;
 
-            Builder() {
-            }
-
-            public Builder<T> functionalInterface(Class<? super T> functionalInterface) {
+            Builder(Class<? super T> functionalInterface) {
                 this.functionalInterface = requireNonNull(functionalInterface);
-                return this;
             }
 
             public Builder<T> serializable(boolean serializable) {
