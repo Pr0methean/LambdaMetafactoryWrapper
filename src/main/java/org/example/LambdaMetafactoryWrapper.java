@@ -14,14 +14,18 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.WeakHashMap;
 import java.util.function.Function;
 import java.util.logging.Logger;
 import static java.lang.invoke.LambdaMetafactory.FLAG_BRIDGES;
 import static java.lang.invoke.LambdaMetafactory.FLAG_MARKERS;
 import static java.lang.invoke.LambdaMetafactory.FLAG_SERIALIZABLE;
 import static java.util.Objects.requireNonNull;
+import static org.example.LambdaMetafactoryDefaultCacheManager.newThreadSafeWeakKeyMap;
 
 public class LambdaMetafactoryWrapper {
     @SuppressWarnings("unused")
@@ -30,6 +34,13 @@ public class LambdaMetafactoryWrapper {
 
     private final MethodHandles.Lookup serialLookup;
     private final LambdaMetafactoryCacheManager cacheManager;
+    private static final Map<MethodHandle, Map<Parameters<?>, Object>> METHOD_HANDLE_WRAPPERS
+            = newThreadSafeWeakKeyMap();
+    private static final Map<SerializedLambdaMethodDescription, Executable> FIND_METHOD_CACHE
+            = Collections.synchronizedMap(new WeakHashMap<>());
+    // Don't want identity semantics
+    private static final Map<SerializedLambda, Object> DESERIALIZATION_CACHE
+            = Collections.synchronizedMap(new WeakHashMap<>());
 
     public LambdaMetafactoryWrapper(final MethodHandles.Lookup lookup, LambdaMetafactoryCacheManager cacheManager) {
         this.lookup = lookup;
@@ -63,8 +74,11 @@ public class LambdaMetafactoryWrapper {
                         .build());
     }
 
+    @SuppressWarnings("unchecked")
     public <T> T wrapMethodHandle(final MethodHandle implementation, final Parameters<T> parameters) {
-        return cacheManager.wrapMethodHandle(this, implementation, parameters);
+        return (T) METHOD_HANDLE_WRAPPERS
+                .computeIfAbsent(implementation, impl -> newThreadSafeWeakKeyMap())
+                .computeIfAbsent(parameters, params -> wrapMethodHandleUncached(implementation, params));
     }
 
     protected <T> T wrapUncached(final Executable implementation, final Parameters<T> parameters) {
@@ -170,31 +184,30 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
-    Executable findMethodUncached(final SerializedLambdaMethodDescription methodDescription) {
-        try {
-            final Class<?> implClass = LambdaMetafactoryWrapper.classForSlashDelimitedName(methodDescription.slashDelimitedClassName);
-            final Class<?>[] parameterTypes = MethodType.fromMethodDescriptorString(methodDescription.methodSignature,
-                    lookup.lookupClass().getClassLoader()).parameterArray();
-            if ("<init>".equals(methodDescription.methodName)) {
-                return implClass.getDeclaredConstructor(parameterTypes);
+    static Executable findMethod(final SerializedLambdaMethodDescription methodDescription) {
+        return FIND_METHOD_CACHE.computeIfAbsent(methodDescription, methodDescription_ -> {
+            try {
+                final Class<?> implClass = LambdaMetafactoryWrapper.classForSlashDelimitedName(methodDescription_.slashDelimitedClassName);
+                final Class<?>[] parameterTypes = MethodType.fromMethodDescriptorString(methodDescription_.methodSignature,
+                        LambdaMetafactoryWrapper.class.getClassLoader()).parameterArray();
+                if ("<init>".equals(methodDescription_.methodName)) {
+                    return implClass.getDeclaredConstructor(parameterTypes);
+                }
+                return implClass.getDeclaredMethod(methodDescription_.methodName, parameterTypes);
+            } catch (final NoSuchMethodException e) {
+                throw new RuntimeException(e);
             }
-            return implClass.getDeclaredMethod(methodDescription.methodName, parameterTypes);
-        } catch (final NoSuchMethodException e) {
-            throw new RuntimeException(e);
-        }
-    }
+        });
 
-    private Executable findMethod(final SerializedLambdaMethodDescription methodDescription) {
-        return cacheManager.findMethod(this, methodDescription);
     }
 
     @SuppressWarnings("unused") // used reflectively
     private static Object $deserializeLambda$(final SerializedLambda serializedLambda) {
-        return getDefaultInstance().cacheManager.deserializeLambda(serializedLambda);
+        return deserializeLambdaUncached(serializedLambda);
     }
 
     protected <T> FunctionalInterfaceDescriptor getDescriptor(final Class<? super T> functionalInterface) {
-        return cacheManager.getDescriptor(this, functionalInterface);
+        return getDescriptorUncached(functionalInterface);
     }
 
     protected MethodHandle getUnreflectedImplementationUncached(final Executable implementation) {
@@ -208,34 +221,23 @@ public class LambdaMetafactoryWrapper {
             } else {
                 throw new IllegalArgumentException(implementation + " is not a Constructor or Method");
             }
-            while (true) {
+            try {
+                lookup.revealDirect(handle);
+                return handle;
+            } catch (final IllegalArgumentException e) {
                 try {
-                    lookup.revealDirect(handle);
-                    return handle;
-                } catch (final IllegalArgumentException e) {
-                    try {
-                        handle = (MethodHandle) LambdaMetafactory.metafactory(
-                                lookup,
-                                "apply",
-                                MethodType.methodType(Function.class, MethodHandle.class),
-                                handle.type().erase(),
-                                MethodHandles.exactInvoker(handle.type()),
-                                handle.type()
-                        ).getTarget().invokeExact(implementation);
-                        handle = lookup.unreflect(MethodHandle.class.getDeclaredMethod("invokeExact", Object[].class)).bindTo(handle);
-                    } catch (final Throwable ex) {
-                        throw new RuntimeException(ex);
-                    }
+                    return lookup.unreflect(MethodHandle.class.getDeclaredMethod("invokeExact", Object[].class)).bindTo(handle);
+                } catch (final IllegalAccessException | NoSuchMethodException ex) {
+                    throw new RuntimeException(ex);
                 }
             }
-
         } catch (final IllegalAccessException e) {
             throw new RuntimeException(e);
         }
     }
 
     public <T> T wrap(final Executable implementation, final Parameters<T> parameters) {
-        return cacheManager.wrap(this, implementation, parameters);
+        return wrapUncached(implementation, parameters);
     }
 
     protected <T> FunctionalInterfaceDescriptor getDescriptorUncached(final Class<? super T> functionalInterface) {
@@ -263,7 +265,7 @@ public class LambdaMetafactoryWrapper {
     }
 
     protected MethodHandle getUnreflectedImplementation(final Executable implementation) {
-        return cacheManager.getUnreflectedImplementation(this, implementation);
+        return getUnreflectedImplementationUncached(implementation);
     }
 
     private static class DefaultInstanceLazyLoader {

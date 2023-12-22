@@ -37,6 +37,6 @@ public class LambdaMetafactoryNoopCacheManager implements LambdaMetafactoryCache
 
     @Override
     public Executable findMethod(LambdaMetafactoryWrapper wrapper, LambdaMetafactoryWrapper.SerializedLambdaMethodDescription methodDescription) {
-        return wrapper.findMethodUncached(methodDescription);
+        return LambdaMetafactoryWrapper.findMethod(methodDescription);
     }
 }

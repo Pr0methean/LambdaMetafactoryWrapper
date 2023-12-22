@@ -141,6 +141,6 @@ public class LambdaMetafactoryDefaultCacheManager implements LambdaMetafactoryCa
 
     @Override
     public Executable findMethod(LambdaMetafactoryWrapper wrapper, LambdaMetafactoryWrapper.SerializedLambdaMethodDescription methodDescription) {
-        return FIND_METHOD_CACHE.computeIfAbsent(methodDescription, wrapper::findMethodUncached);
+        return FIND_METHOD_CACHE.computeIfAbsent(methodDescription, LambdaMetafactoryWrapper::findMethod);
     }
 }
