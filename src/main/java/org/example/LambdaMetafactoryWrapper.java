@@ -204,23 +204,12 @@ public class LambdaMetafactoryWrapper {
     protected MethodHandle getUnreflectedImplementationUncached(final Executable implementation) {
         try {
             implementation.setAccessible(true);
-            MethodHandle handle;
             if (implementation instanceof Method) {
-                handle = lookup.unreflect((Method) implementation);
+                return lookup.unreflect((Method) implementation);
             } else if (implementation instanceof Constructor<?>) {
-                handle = lookup.unreflectConstructor((Constructor<?>) implementation);
+                return lookup.unreflectConstructor((Constructor<?>) implementation);
             } else {
                 throw new IllegalArgumentException(implementation + " is not a Constructor or Method");
-            }
-            try {
-                lookup.revealDirect(handle);
-                return handle;
-            } catch (final IllegalArgumentException e) {
-                try {
-                    return lookup.unreflect(MethodHandle.class.getDeclaredMethod("invokeExact", Object[].class)).bindTo(handle);
-                } catch (final IllegalAccessException | NoSuchMethodException ex) {
-                    throw new RuntimeException(ex);
-                }
             }
         } catch (final IllegalAccessException e) {
             throw new RuntimeException(e);
