@@ -77,6 +77,17 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
+    public static void clearCaches() {
+        CACHE_FOR_IMMORTAL_CLASSLOADERS.clear();
+        CACHE_PER_UNLOADABLE_CLASSLOADER.clear();
+        ANON_AND_HIDDEN_DESCRIPTORS.clear();
+        ANON_AND_HIDDEN_UNREFLECTED.clear();
+        ANON_AND_HIDDEN_WRAPPERS.clear();
+        METHOD_HANDLE_WRAPPERS.clear();
+        FIND_METHOD_CACHE.clear();
+        DESERIALIZATION_CACHE.clear();
+    }
+
     public LambdaMetafactoryWrapper() {
         this(MethodHandles.lookup());
     }
@@ -451,6 +462,12 @@ public class LambdaMetafactoryWrapper {
                                       final BiFunction<Executable, Parameters<?>, Object> wrappingFunction) {
             return cachedWrappers.computeIfAbsent(implementation, impl -> LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap())
                     .computeIfAbsent(parameters, params -> wrappingFunction.apply(implementation, params));
+        }
+
+        void clear() {
+            descriptors.clear();
+            unreflected.clear();
+            cachedWrappers.clear();
         }
     }
 }
