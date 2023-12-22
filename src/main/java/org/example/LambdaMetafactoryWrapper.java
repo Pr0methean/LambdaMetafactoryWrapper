@@ -1,5 +1,6 @@
 package org.example;
 
+import java.io.Serializable;
 import java.lang.invoke.CallSite;
 import java.lang.invoke.LambdaMetafactory;
 import java.lang.invoke.MethodHandle;
@@ -137,7 +138,8 @@ public class LambdaMetafactoryWrapper {
                 additionalParameters.add(0);
                 int flags = 0;
                 final MethodHandles.Lookup outputLookup;
-                if (parameters.serializable) {
+                if (parameters.serializable || Serializable.class.isAssignableFrom(parameters.functionalInterface)
+                    || parameters.markerInterfaces.stream().anyMatch(Serializable.class::isAssignableFrom)) {
                     flags |= FLAG_SERIALIZABLE;
                     outputLookup = serialLookup;
                 } else {
