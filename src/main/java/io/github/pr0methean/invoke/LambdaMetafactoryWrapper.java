@@ -48,24 +48,17 @@ public class LambdaMetafactoryWrapper {
 
     protected final MethodHandles.Lookup lookup;
 
-    static Object deserializeLambdaUncached(SerializedLambda lambda) {
-        final Executable implementation = LambdaMetafactoryWrapper.findMethod(new SerializedLambdaMethodDescription(
-                lambda.getImplClass(), lambda.getImplMethodName(),
-                lambda.getImplMethodSignature()));
-        final Class<?> functionalInterface = LambdaMetafactoryWrapper.classForSlashDelimitedName(lambda.getFunctionalInterfaceClass());
-        final ArrayList<Object> capturedParams = new ArrayList<>(lambda.getCapturedArgCount());
-        for (int i = 0; i < lambda.getCapturedArgCount(); i++) {
-            capturedParams.add(lambda.getCapturedArg(i));
-        }
-        return getDefaultInstance().wrap(implementation,
-                Parameters.builder(functionalInterface)
-                        .serializable(true)
-                        .addCapturedParameters(capturedParams)
-                        .build());
-    }
-
     public LambdaMetafactoryWrapper(MethodHandles.Lookup lookup) {
         this(lookup, LambdaMetafactoryDefaultCacheManager.getInstance());
+    }
+
+    public <T> T wrap(final Executable implementation, final Class<? super T> functionalInterface) {
+        return wrap(implementation, Parameters.<T>builder(functionalInterface)
+                .build());
+    }
+
+    public <T> T wrap(final Executable implementation, final Parameters<T> parameters) {
+        return cacheManager.wrap(this, implementation, parameters);
     }
 
     public <T> T wrapMethodHandle(final MethodHandle implementation, final Parameters<T> parameters) {
@@ -176,6 +169,10 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
+    private static Executable findMethod(final SerializedLambdaMethodDescription methodDescription) {
+        return getDefaultInstance().cacheManager.findMethod(getDefaultInstance(), methodDescription);
+    }
+
     static Executable findMethodUncached(SerializedLambdaMethodDescription methodDescription_) {
         try {
             final Class<?> implClass = LambdaMetafactoryWrapper.classForSlashDelimitedName(methodDescription_.slashDelimitedClassName);
@@ -190,36 +187,29 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
-    private static Executable findMethod(final SerializedLambdaMethodDescription methodDescription) {
-        return getDefaultInstance().cacheManager.findMethod(getDefaultInstance(), methodDescription);
-    }
-
     @SuppressWarnings("unused") // used reflectively
     private static Object $deserializeLambda$(final SerializedLambda serializedLambda) {
         return getDefaultInstance().cacheManager.deserializeLambda(serializedLambda);
     }
 
+    static Object deserializeLambdaUncached(SerializedLambda lambda) {
+        final Executable implementation = LambdaMetafactoryWrapper.findMethod(new SerializedLambdaMethodDescription(
+                lambda.getImplClass(), lambda.getImplMethodName(),
+                lambda.getImplMethodSignature()));
+        final Class<?> functionalInterface = LambdaMetafactoryWrapper.classForSlashDelimitedName(lambda.getFunctionalInterfaceClass());
+        final ArrayList<Object> capturedParams = new ArrayList<>(lambda.getCapturedArgCount());
+        for (int i = 0; i < lambda.getCapturedArgCount(); i++) {
+            capturedParams.add(lambda.getCapturedArg(i));
+        }
+        return getDefaultInstance().wrap(implementation,
+                Parameters.builder(functionalInterface)
+                        .serializable(true)
+                        .addCapturedParameters(capturedParams)
+                        .build());
+    }
+
     protected <T> FunctionalInterfaceDescriptor getDescriptor(final Class<? super T> functionalInterface) {
         return cacheManager.getDescriptor(this, functionalInterface);
-    }
-
-    protected MethodHandle getUnreflectedImplementationUncached(final Executable implementation) {
-        try {
-            implementation.setAccessible(true);
-            if (implementation instanceof Method) {
-                return lookup.unreflect((Method) implementation);
-            } else if (implementation instanceof Constructor<?>) {
-                return lookup.unreflectConstructor((Constructor<?>) implementation);
-            } else {
-                throw new IllegalArgumentException(implementation + " is not a Constructor or Method");
-            }
-        } catch (final IllegalAccessException e) {
-            throw new RuntimeException(e);
-        }
-    }
-
-    public <T> T wrap(final Executable implementation, final Parameters<T> parameters) {
-        return cacheManager.wrap(this, implementation, parameters);
     }
 
     protected <T> FunctionalInterfaceDescriptor getDescriptorUncached(final Class<? super T> functionalInterface) {
@@ -241,13 +231,23 @@ public class LambdaMetafactoryWrapper {
                 MethodType.methodType(functionalInterface));
     }
 
-    public <T> T wrap(final Executable implementation, final Class<? super T> functionalInterface) {
-        return wrap(implementation, Parameters.<T>builder(functionalInterface)
-                .build());
-    }
-
     protected MethodHandle getUnreflectedImplementation(final Executable implementation) {
         return cacheManager.getUnreflectedImplementation(this, implementation);
+    }
+
+    protected MethodHandle getUnreflectedImplementationUncached(final Executable implementation) {
+        try {
+            implementation.setAccessible(true);
+            if (implementation instanceof Method) {
+                return lookup.unreflect((Method) implementation);
+            } else if (implementation instanceof Constructor<?>) {
+                return lookup.unreflectConstructor((Constructor<?>) implementation);
+            } else {
+                throw new IllegalArgumentException(implementation + " is not a Constructor or Method");
+            }
+        } catch (final IllegalAccessException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private static class DefaultInstanceLazyLoader {
