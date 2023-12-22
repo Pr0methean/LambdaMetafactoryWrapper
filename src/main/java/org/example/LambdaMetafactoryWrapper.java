@@ -14,12 +14,8 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.WeakHashMap;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
 import static java.lang.invoke.LambdaMetafactory.FLAG_BRIDGES;
 import static java.lang.invoke.LambdaMetafactory.FLAG_MARKERS;
@@ -45,15 +41,31 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
-    public LambdaMetafactoryWrapper(final MethodHandles.Lookup lookup) {
-        this(lookup, LambdaMetafactoryDefaultCacheManager.getInstance());
-    }
-
     public LambdaMetafactoryWrapper() {
         this(MethodHandles.lookup());
     }
 
     protected final MethodHandles.Lookup lookup;
+
+    static Object deserializeLambdaUncached(SerializedLambda lambda) {
+        final Executable implementation = LambdaMetafactoryWrapper.findMethod(new SerializedLambdaMethodDescription(
+                lambda.getImplClass(), lambda.getImplMethodName(),
+                lambda.getImplMethodSignature()));
+        final Class<?> functionalInterface = LambdaMetafactoryWrapper.classForSlashDelimitedName(lambda.getFunctionalInterfaceClass());
+        final ArrayList<Object> capturedParams = new ArrayList<>(lambda.getCapturedArgCount());
+        for (int i = 0; i < lambda.getCapturedArgCount(); i++) {
+            capturedParams.add(lambda.getCapturedArg(i));
+        }
+        return getDefaultInstance().wrap(implementation,
+                Parameters.builder(functionalInterface)
+                        .serializable(true)
+                        .addCapturedParameters(capturedParams)
+                        .build());
+    }
+
+    public LambdaMetafactoryWrapper(MethodHandles.Lookup lookup) {
+        this(lookup, LambdaMetafactoryDefaultCacheManager.getInstance());
+    }
 
     public <T> T wrapMethodHandle(final MethodHandle implementation, final Parameters<T> parameters) {
         return cacheManager.wrapMethodHandle(this, implementation, parameters);
@@ -162,10 +174,6 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
-    private static Executable findMethod(final SerializedLambdaMethodDescription methodDescription) {
-        return getDefaultInstance().cacheManager.findMethod(methodDescription);
-    }
-
     static Executable findMethodUncached(SerializedLambdaMethodDescription methodDescription_) {
         try {
             final Class<?> implClass = LambdaMetafactoryWrapper.classForSlashDelimitedName(methodDescription_.slashDelimitedClassName);
@@ -180,25 +188,13 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
+    private static Executable findMethod(final SerializedLambdaMethodDescription methodDescription) {
+        return getDefaultInstance().cacheManager.findMethod(getDefaultInstance(), methodDescription);
+    }
+
     @SuppressWarnings("unused") // used reflectively
     private static Object $deserializeLambda$(final SerializedLambda serializedLambda) {
         return getDefaultInstance().cacheManager.deserializeLambda(serializedLambda);
-    }
-
-    static Object deserializeLambdaUncached(SerializedLambda lambda) {
-        final Executable implementation = LambdaMetafactoryWrapper.findMethod(new SerializedLambdaMethodDescription(
-                lambda.getImplClass(), lambda.getImplMethodName(),
-                lambda.getImplMethodSignature()));
-        final Class<?> functionalInterface = LambdaMetafactoryWrapper.classForSlashDelimitedName(lambda.getFunctionalInterfaceClass());
-        final ArrayList<Object> capturedParams = new ArrayList<>(lambda.getCapturedArgCount());
-        for (int i = 0; i < lambda.getCapturedArgCount(); i++) {
-            capturedParams.add(lambda.getCapturedArg(i));
-        }
-        return getDefaultInstance().wrap(implementation,
-                Parameters.builder(functionalInterface)
-                        .serializable(true)
-                        .addCapturedParameters(capturedParams)
-                        .build());
     }
 
     protected <T> FunctionalInterfaceDescriptor getDescriptor(final Class<? super T> functionalInterface) {
@@ -206,10 +202,9 @@ public class LambdaMetafactoryWrapper {
     }
 
     protected MethodHandle getUnreflectedImplementationUncached(final Executable implementation) {
-        final MethodHandles.Lookup lookup = this.lookup.in(implementation.getDeclaringClass());
         try {
             implementation.setAccessible(true);
-            final MethodHandle handle;
+            MethodHandle handle;
             if (implementation instanceof Method) {
                 handle = lookup.unreflect((Method) implementation);
             } else if (implementation instanceof Constructor<?>) {
@@ -234,10 +229,6 @@ public class LambdaMetafactoryWrapper {
 
     public <T> T wrap(final Executable implementation, final Parameters<T> parameters) {
         return cacheManager.wrap(this, implementation, parameters);
-    }
-
-    static <K, V> Map<K, V> newThreadSafeWeakKeyMap() {
-        return Collections.synchronizedMap(new WeakHashMap<>());
     }
 
     protected <T> FunctionalInterfaceDescriptor getDescriptorUncached(final Class<? super T> functionalInterface) {
@@ -384,10 +375,4 @@ public class LambdaMetafactoryWrapper {
             String methodName,
             String methodSignature
     ) {}
-
-    private static class ClassLoaderSpecificCache {
-        final ConcurrentHashMap<Class<?>, FunctionalInterfaceDescriptor> descriptors = new ConcurrentHashMap<>();
-        final ConcurrentHashMap<Executable, MethodHandle> unreflected = new ConcurrentHashMap<>();
-
-    }
 }

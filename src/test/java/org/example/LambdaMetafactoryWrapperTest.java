@@ -16,7 +16,11 @@ class LambdaMetafactoryWrapperTest {
     // TODO: Caching, bridges, marker interfaces
 
     protected LambdaMetafactoryWrapper createWrapper() {
-        return new LambdaMetafactoryWrapper(MethodHandles.lookup());
+        return new LambdaMetafactoryWrapper(getLookup());
+    }
+
+    protected final MethodHandles.Lookup getLookup() {
+        return MethodHandles.lookup();
     }
 
     private static String getGreeting() {

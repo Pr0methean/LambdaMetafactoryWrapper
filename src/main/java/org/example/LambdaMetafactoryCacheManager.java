@@ -5,19 +5,22 @@ import java.lang.invoke.SerializedLambda;
 import java.lang.reflect.Executable;
 
 public interface LambdaMetafactoryCacheManager {
-    Object deserializeLambda(SerializedLambda serializedLambda);
+    <T> T wrapMethodHandle(final LambdaMetafactoryWrapper wrapper,
+                           final MethodHandle implementation,
+                           final LambdaMetafactoryWrapper.Parameters<T> parameters);
 
-    Executable findMethod(LambdaMetafactoryWrapper.SerializedLambdaMethodDescription methodDescription);
+    <T> LambdaMetafactoryWrapper.FunctionalInterfaceDescriptor getDescriptor(final LambdaMetafactoryWrapper wrapper,
+                                                                             final Class<? super T> functionalInterface);
 
-    @SuppressWarnings("unchecked")
-    <T> T wrapMethodHandle(LambdaMetafactoryWrapper wrapper,
-                           MethodHandle implementation, LambdaMetafactoryWrapper.Parameters<T> parameters);
+    MethodHandle getUnreflectedImplementation(final LambdaMetafactoryWrapper wrapper, final Executable implementation);
 
-    @SuppressWarnings("unchecked")
-    <T> T wrap(LambdaMetafactoryWrapper wrapper, Executable implementation, LambdaMetafactoryWrapper.Parameters<T> parameters);
+    <T> T wrap(final LambdaMetafactoryWrapper wrapper,
+               final Executable implementation,
+               final LambdaMetafactoryWrapper.Parameters<T> parameters);
 
-    MethodHandle getUnreflectedImplementation(LambdaMetafactoryWrapper wrapper, Executable implementation);
+    Object deserializeLambda(final SerializedLambda serializedLambda);
 
-    <T> LambdaMetafactoryWrapper.FunctionalInterfaceDescriptor getDescriptor(
-            LambdaMetafactoryWrapper wrapper, Class<? super T> functionalInterface);
+    void clearCaches();
+
+    Executable findMethod(LambdaMetafactoryWrapper wrapper, LambdaMetafactoryWrapper.SerializedLambdaMethodDescription methodDescription);
 }
