@@ -32,9 +32,11 @@ public class LambdaMetafactoryWrapper {
     private static final Class<?>[] EMPTY_CLASS_ARRAY = new Class<?>[0];
 
     private final MethodHandles.Lookup serialLookup;
-    private final LambdaMetafactoryCacheManager cacheManager = LambdaMetafactoryDefaultCacheManager.getInstance();
+    private final LambdaMetafactoryCacheManager cacheManager;
 
-    public LambdaMetafactoryWrapper(final MethodHandles.Lookup lookup) {
+    public LambdaMetafactoryWrapper(final MethodHandles.Lookup lookup,
+                                    LambdaMetafactoryCacheManager cacheManager) {
+        this.cacheManager = cacheManager;
         this.lookup = lookup;
         try {
             this.serialLookup = MethodHandles.privateLookupIn(LambdaMetafactoryWrapper.class, lookup);
@@ -44,7 +46,7 @@ public class LambdaMetafactoryWrapper {
     }
 
     public LambdaMetafactoryWrapper() {
-        this(MethodHandles.lookup());
+        this(MethodHandles.lookup(), LambdaMetafactoryDefaultCacheManager.getInstance());
     }
 
     protected final MethodHandles.Lookup lookup;
@@ -263,7 +265,8 @@ public class LambdaMetafactoryWrapper {
     }
 
     private static class DefaultInstanceLazyLoader {
-        static final LambdaMetafactoryWrapper DEFAULT_INSTANCE = new LambdaMetafactoryWrapper(MethodHandles.lookup());
+        static final LambdaMetafactoryWrapper DEFAULT_INSTANCE = new LambdaMetafactoryWrapper(MethodHandles.lookup(),
+                LambdaMetafactoryDefaultCacheManager.getInstance());
     }
 
     public static LambdaMetafactoryWrapper getDefaultInstance() {
