@@ -23,6 +23,8 @@ public class LambdaMetafactoryCacheManager {
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
     private static final Map<Executable, Map<Parameters<?>, Object>> WRAPPERS
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
+    private static final Map<Class<?>, LambdaMetafactoryWrapper.FunctionalInterfaceDescriptor> DESCRIPTORS
+            = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
 
     public Object deserializeLambda(SerializedLambda serializedLambda) {
         return DESERIALIZATION_CACHE.computeIfAbsent(serializedLambda, LambdaMetafactoryWrapper::deserializeLambdaUncached);
@@ -48,5 +50,10 @@ public class LambdaMetafactoryCacheManager {
 
     public MethodHandle getUnreflectedImplementation(LambdaMetafactoryWrapper wrapper, final Executable implementation) {
         return UNREFLECTED.computeIfAbsent(implementation, wrapper::getUnreflectedImplementationUncached);
+    }
+
+    public <T> LambdaMetafactoryWrapper.FunctionalInterfaceDescriptor getDescriptor(
+            LambdaMetafactoryWrapper wrapper, final Class<? super T> functionalInterface) {
+        return DESCRIPTORS.computeIfAbsent(functionalInterface, wrapper::getDescriptorUncached);
     }
 }

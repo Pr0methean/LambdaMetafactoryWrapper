@@ -38,8 +38,6 @@ public class LambdaMetafactoryWrapper {
     private static final ClassLoaderSpecificCache CACHE_FOR_IMMORTAL_CLASSLOADERS = new ClassLoaderSpecificCache();
     private static final Map<Class<?>, FunctionalInterfaceDescriptor> ANON_AND_HIDDEN_DESCRIPTORS
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-    private static final Map<Executable, MethodHandle> ANON_AND_HIDDEN_UNREFLECTED
-            = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
 
     static {
         final Set<ClassLoader> classLoadersThisClassCannotOutlast = Collections.newSetFromMap(new IdentityHashMap<>(3));
@@ -229,11 +227,7 @@ public class LambdaMetafactoryWrapper {
     }
 
     protected <T> FunctionalInterfaceDescriptor getDescriptor(final Class<? super T> functionalInterface) {
-        if (!LambdaMetafactoryWrapper.isReferencedByClassLoader(functionalInterface)) {
-            return ANON_AND_HIDDEN_DESCRIPTORS.computeIfAbsent(functionalInterface, this::getDescriptorUncached);
-        }
-        return LambdaMetafactoryWrapper.getClassLoaderSpecificCache(functionalInterface).descriptors
-                .computeIfAbsent(functionalInterface, this::getDescriptorUncached);
+        return cacheManager.getDescriptor(this, functionalInterface);
     }
 
     protected MethodHandle getUnreflectedImplementationUncached(final Executable implementation) {
@@ -312,7 +306,7 @@ public class LambdaMetafactoryWrapper {
         return DefaultInstanceLazyLoader.DEFAULT_INSTANCE;
     }
 
-    protected record FunctionalInterfaceDescriptor(
+    public record FunctionalInterfaceDescriptor(
             MethodType methodType,
             String methodName,
             MethodType nonCapturingReturning) {
