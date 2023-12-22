@@ -22,5 +22,6 @@ public interface LambdaMetafactoryCacheManager {
 
     void clearCaches();
 
-    Executable findMethod(LambdaMetafactoryWrapper wrapper, LambdaMetafactoryWrapper.SerializedLambdaMethodDescription methodDescription);
+    Executable findMethod(LambdaMetafactoryWrapper wrapper,
+                          LambdaMetafactoryWrapper.SerializedLambdaMethodDescription methodDescription);
 }
