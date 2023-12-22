@@ -77,7 +77,6 @@ public class LambdaMetafactoryWrapper {
 
     protected final MethodHandles.Lookup lookup;
 
-    @SuppressWarnings("unchecked")
     public <T> T wrapMethodHandle(final MethodHandle implementation, final Parameters<T> parameters) {
         return cacheManager.wrapMethodHandle(this, implementation, parameters);
     }
@@ -430,7 +429,7 @@ public class LambdaMetafactoryWrapper {
                 (obj.getClass() == getClass() && lookup == ((LambdaMetafactoryWrapper)obj).lookup);
     }
 
-    record SerializedLambdaMethodDescription(
+    public record SerializedLambdaMethodDescription(
             String slashDelimitedClassName,
             String methodName,
             String methodSignature
