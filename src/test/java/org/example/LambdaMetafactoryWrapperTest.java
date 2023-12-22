@@ -47,6 +47,7 @@ class LambdaMetafactoryWrapperTest {
                 .withPrefabValues(MethodHandles.Lookup.class, MethodHandles.lookup(), MethodHandles.publicLookup())
                 .withNonnullFields("lookup")
                 .withIgnoredFields("serialLookup")
+                .withIgnoredFields("cacheManager")
                 .usingGetClass()
                 .verify();
     }

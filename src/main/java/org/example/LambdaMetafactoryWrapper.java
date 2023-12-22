@@ -45,11 +45,6 @@ public class LambdaMetafactoryWrapper {
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
     private static final Map<MethodHandle, Map<Parameters<?>, Object>> METHOD_HANDLE_WRAPPERS
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-    // Don't want identity semantics
-    private static final Map<SerializedLambda, Object> DESERIALIZATION_CACHE
-            = Collections.synchronizedMap(new WeakHashMap<>());
-    private static final Map<SerializedLambdaMethodDescription, Executable> FIND_METHOD_CACHE
-            = Collections.synchronizedMap(new WeakHashMap<>());
 
     static {
         final Set<ClassLoader> classLoadersThisClassCannotOutlast = Collections.newSetFromMap(new IdentityHashMap<>(3));
@@ -67,6 +62,7 @@ public class LambdaMetafactoryWrapper {
     }
 
     private final MethodHandles.Lookup serialLookup;
+    private final LambdaMetafactoryCacheManager cacheManager = new LambdaMetafactoryCacheManager();
 
     public LambdaMetafactoryWrapper(final MethodHandles.Lookup lookup) {
         this.lookup = lookup;
@@ -75,17 +71,6 @@ public class LambdaMetafactoryWrapper {
         } catch (final IllegalAccessException e) {
             throw new RuntimeException(e);
         }
-    }
-
-    public static void clearCaches() {
-        CACHE_FOR_IMMORTAL_CLASSLOADERS.clear();
-        CACHE_PER_UNLOADABLE_CLASSLOADER.clear();
-        ANON_AND_HIDDEN_DESCRIPTORS.clear();
-        ANON_AND_HIDDEN_UNREFLECTED.clear();
-        ANON_AND_HIDDEN_WRAPPERS.clear();
-        METHOD_HANDLE_WRAPPERS.clear();
-        FIND_METHOD_CACHE.clear();
-        DESERIALIZATION_CACHE.clear();
     }
 
     public LambdaMetafactoryWrapper() {
@@ -213,39 +198,42 @@ public class LambdaMetafactoryWrapper {
     }
 
     private static Executable findMethod(final SerializedLambdaMethodDescription methodDescription) {
-        return FIND_METHOD_CACHE.computeIfAbsent(methodDescription, methodDescription_ -> {
-            try {
-                final Class<?> implClass = LambdaMetafactoryWrapper.classForSlashDelimitedName(methodDescription_.slashDelimitedClassName);
-                final Class<?>[] parameterTypes = MethodType.fromMethodDescriptorString(methodDescription_.methodSignature,
-                        LambdaMetafactoryWrapper.class.getClassLoader()).parameterArray();
-                if ("<init>".equals(methodDescription_.methodName)) {
-                    return implClass.getDeclaredConstructor(parameterTypes);
-                }
-                return implClass.getDeclaredMethod(methodDescription_.methodName, parameterTypes);
-            } catch (final NoSuchMethodException e) {
-                throw new RuntimeException(e);
-            }
-        });
+        return getDefaultInstance().cacheManager.findMethod(methodDescription);
+    }
 
+    static Executable findMethodUncached(SerializedLambdaMethodDescription methodDescription_) {
+        try {
+            final Class<?> implClass = LambdaMetafactoryWrapper.classForSlashDelimitedName(methodDescription_.slashDelimitedClassName);
+            final Class<?>[] parameterTypes = MethodType.fromMethodDescriptorString(methodDescription_.methodSignature,
+                    LambdaMetafactoryWrapper.class.getClassLoader()).parameterArray();
+            if ("<init>".equals(methodDescription_.methodName)) {
+                return implClass.getDeclaredConstructor(parameterTypes);
+            }
+            return implClass.getDeclaredMethod(methodDescription_.methodName, parameterTypes);
+        } catch (final NoSuchMethodException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     @SuppressWarnings("unused") // used reflectively
     private static Object $deserializeLambda$(final SerializedLambda serializedLambda) {
-        return DESERIALIZATION_CACHE.computeIfAbsent(serializedLambda, lambda -> {
-            final Executable implementation = LambdaMetafactoryWrapper.findMethod(new SerializedLambdaMethodDescription(
-                    lambda.getImplClass(), lambda.getImplMethodName(),
-                    lambda.getImplMethodSignature()));
-            final Class<?> functionalInterface = LambdaMetafactoryWrapper.classForSlashDelimitedName(lambda.getFunctionalInterfaceClass());
-            final ArrayList<Object> capturedParams = new ArrayList<>(lambda.getCapturedArgCount());
-            for (int i = 0; i < lambda.getCapturedArgCount(); i++) {
-                capturedParams.add(lambda.getCapturedArg(i));
-            }
-            return getDefaultInstance().wrap(implementation,
-                    Parameters.builder(functionalInterface)
-                            .serializable(true)
-                            .addCapturedParameters(capturedParams)
-                            .build());
-        });
+        return getDefaultInstance().cacheManager.deserializeLambda(serializedLambda);
+    }
+
+    static Object deserializeLambdaUncached(SerializedLambda lambda) {
+        final Executable implementation = LambdaMetafactoryWrapper.findMethod(new SerializedLambdaMethodDescription(
+                lambda.getImplClass(), lambda.getImplMethodName(),
+                lambda.getImplMethodSignature()));
+        final Class<?> functionalInterface = LambdaMetafactoryWrapper.classForSlashDelimitedName(lambda.getFunctionalInterfaceClass());
+        final ArrayList<Object> capturedParams = new ArrayList<>(lambda.getCapturedArgCount());
+        for (int i = 0; i < lambda.getCapturedArgCount(); i++) {
+            capturedParams.add(lambda.getCapturedArg(i));
+        }
+        return getDefaultInstance().wrap(implementation,
+                Parameters.builder(functionalInterface)
+                        .serializable(true)
+                        .addCapturedParameters(capturedParams)
+                        .build());
     }
 
     protected <T> FunctionalInterfaceDescriptor getDescriptor(final Class<? super T> functionalInterface) {
@@ -446,7 +434,7 @@ public class LambdaMetafactoryWrapper {
                 (obj.getClass() == getClass() && lookup == ((LambdaMetafactoryWrapper)obj).lookup);
     }
 
-    private record SerializedLambdaMethodDescription(
+    record SerializedLambdaMethodDescription(
             String slashDelimitedClassName,
             String methodName,
             String methodSignature
