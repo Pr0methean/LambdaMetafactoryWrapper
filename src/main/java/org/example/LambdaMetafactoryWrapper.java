@@ -45,8 +45,12 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
+    public LambdaMetafactoryWrapper(final MethodHandles.Lookup lookup) {
+        this(lookup, LambdaMetafactoryDefaultCacheManager.getInstance());
+    }
+
     public LambdaMetafactoryWrapper() {
-        this(MethodHandles.lookup(), LambdaMetafactoryDefaultCacheManager.getInstance());
+        this(MethodHandles.lookup());
     }
 
     protected final MethodHandles.Lookup lookup;
