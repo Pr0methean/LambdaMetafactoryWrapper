@@ -1,4 +1,4 @@
-package org.example;
+package io.github.pr0methean.invoke;
 
 public class LambdaMetafactoryNoCacheTest extends LambdaMetafactoryWrapperTest {
     @Override

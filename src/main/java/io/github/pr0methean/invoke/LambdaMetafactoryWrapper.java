@@ -1,4 +1,4 @@
-package org.example;
+package io.github.pr0methean.invoke;
 
 import java.io.Serializable;
 import java.lang.invoke.CallSite;

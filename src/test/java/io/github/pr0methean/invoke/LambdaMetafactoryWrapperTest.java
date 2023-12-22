@@ -1,4 +1,4 @@
-package org.example;
+package io.github.pr0methean.invoke;
 
 import nl.jqno.equalsverifier.EqualsVerifier;
 import org.junit.jupiter.api.Test;

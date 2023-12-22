@@ -1,4 +1,4 @@
-package org.example;
+package io.github.pr0methean.invoke;
 
 import java.lang.invoke.MethodHandle;
 import java.lang.invoke.SerializedLambda;
