@@ -61,10 +61,6 @@ public class LambdaMetafactoryWrapper {
         return cacheManager.wrap(this, implementation, parameters);
     }
 
-    public <T> T wrapMethodHandle(final MethodHandle implementation, final Parameters<T> parameters) {
-        return cacheManager.wrapMethodHandle(this, implementation, parameters);
-    }
-
     protected <T> T wrapUncached(final Executable implementation, final Parameters<T> parameters) {
         if (implementation instanceof Method && !parameters.capturedParameters.isEmpty()
                 && !Modifier.isStatic(implementation.getModifiers())) {
@@ -76,6 +72,10 @@ public class LambdaMetafactoryWrapper {
         }
         final MethodHandle unreflectedImplementation = getUnreflectedImplementation(implementation);
         return wrapMethodHandleUncached(unreflectedImplementation, parameters);
+    }
+
+    public <T> T wrapMethodHandle(final MethodHandle implementation, final Parameters<T> parameters) {
+        return cacheManager.wrapMethodHandle(this, implementation, parameters);
     }
 
     @SuppressWarnings("unchecked")
