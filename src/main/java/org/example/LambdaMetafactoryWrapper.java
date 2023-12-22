@@ -22,7 +22,6 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.BiFunction;
 import java.util.logging.Logger;
 import static java.lang.invoke.LambdaMetafactory.FLAG_BRIDGES;
 import static java.lang.invoke.LambdaMetafactory.FLAG_MARKERS;
@@ -40,8 +39,6 @@ public class LambdaMetafactoryWrapper {
     private static final Map<Class<?>, FunctionalInterfaceDescriptor> ANON_AND_HIDDEN_DESCRIPTORS
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
     private static final Map<Executable, MethodHandle> ANON_AND_HIDDEN_UNREFLECTED
-            = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-    private static final Map<Executable, Map<Parameters<?>, Object>> ANON_AND_HIDDEN_WRAPPERS
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
 
     static {
@@ -268,14 +265,7 @@ public class LambdaMetafactoryWrapper {
 
     @SuppressWarnings("unchecked")
     public <T> T wrap(final Executable implementation, final Parameters<T> parameters) {
-        final Class<?> declaringClass = implementation.getDeclaringClass();
-        if (!LambdaMetafactoryWrapper.isReferencedByClassLoader(declaringClass)) {
-            return (T) ANON_AND_HIDDEN_WRAPPERS
-                    .computeIfAbsent(implementation, impl -> LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap())
-                    .computeIfAbsent(parameters, params -> wrap(implementation, params));
-        }
-        return (T) LambdaMetafactoryWrapper.getClassLoaderSpecificCache(declaringClass)
-                .computeWrapperIfAbsent(implementation, parameters, this::wrapUncached);
+        return cacheManager.wrap(this, implementation, parameters);
     }
 
     private static boolean isReferencedByClassLoader(final Class<?> declaringClass) {
@@ -311,12 +301,7 @@ public class LambdaMetafactoryWrapper {
     }
 
     protected MethodHandle getUnreflectedImplementation(final Executable implementation) {
-        final Class<?> declaringClass = implementation.getDeclaringClass();
-        if (!LambdaMetafactoryWrapper.isReferencedByClassLoader(declaringClass)) {
-            return ANON_AND_HIDDEN_UNREFLECTED.computeIfAbsent(implementation, this::getUnreflectedImplementationUncached);
-        }
-        return LambdaMetafactoryWrapper.getClassLoaderSpecificCache(declaringClass)
-                .unreflected.computeIfAbsent(implementation, this::getUnreflectedImplementationUncached);
+        return cacheManager.getUnreflectedImplementation(this, implementation);
     }
 
     private static class DefaultInstanceLazyLoader {
@@ -438,19 +423,6 @@ public class LambdaMetafactoryWrapper {
     private static class ClassLoaderSpecificCache {
         final ConcurrentHashMap<Class<?>, FunctionalInterfaceDescriptor> descriptors = new ConcurrentHashMap<>();
         final ConcurrentHashMap<Executable, MethodHandle> unreflected = new ConcurrentHashMap<>();
-        final ConcurrentHashMap<Executable, Map<Parameters<?>, Object>> cachedWrappers
-                = new ConcurrentHashMap<>();
 
-        Object computeWrapperIfAbsent(final Executable implementation, final Parameters<?> parameters,
-                                      final BiFunction<Executable, Parameters<?>, Object> wrappingFunction) {
-            return cachedWrappers.computeIfAbsent(implementation, impl -> LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap())
-                    .computeIfAbsent(parameters, params -> wrappingFunction.apply(implementation, params));
-        }
-
-        void clear() {
-            descriptors.clear();
-            unreflected.clear();
-            cachedWrappers.clear();
-        }
     }
 }

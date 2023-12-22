@@ -6,6 +6,8 @@ import java.lang.reflect.Executable;
 import java.util.Collections;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.concurrent.ConcurrentHashMap;
+
 import org.example.LambdaMetafactoryWrapper.Parameters;
 
 public class LambdaMetafactoryCacheManager {
@@ -17,9 +19,9 @@ public class LambdaMetafactoryCacheManager {
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
     private static final Map<Class<?>, LambdaMetafactoryWrapper.FunctionalInterfaceDescriptor> ANON_AND_HIDDEN_DESCRIPTORS
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-    private static final Map<Executable, MethodHandle> ANON_AND_HIDDEN_UNREFLECTED
+    private static final Map<Executable, MethodHandle> UNREFLECTED
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-    private static final Map<Executable, Map<Parameters<?>, Object>> ANON_AND_HIDDEN_WRAPPERS
+    private static final Map<Executable, Map<Parameters<?>, Object>> WRAPPERS
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
 
     public Object deserializeLambda(SerializedLambda serializedLambda) {
@@ -36,5 +38,15 @@ public class LambdaMetafactoryCacheManager {
         return (T) METHOD_HANDLE_WRAPPERS
                 .computeIfAbsent(implementation, impl -> LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap())
                 .computeIfAbsent(parameters, params -> wrapper.wrapMethodHandleUncached(implementation, params));
+    }
+
+    @SuppressWarnings("unchecked")
+    public <T> T wrap(LambdaMetafactoryWrapper wrapper, Executable implementation, Parameters<T> parameters) {
+        return (T) WRAPPERS.computeIfAbsent(implementation, impl -> new ConcurrentHashMap<>())
+                .computeIfAbsent(parameters, params -> wrapper.wrapUncached(implementation, params));
+    }
+
+    public MethodHandle getUnreflectedImplementation(LambdaMetafactoryWrapper wrapper, final Executable implementation) {
+        return UNREFLECTED.computeIfAbsent(implementation, wrapper::getUnreflectedImplementationUncached);
     }
 }
