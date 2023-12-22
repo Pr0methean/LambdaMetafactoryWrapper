@@ -52,7 +52,7 @@ public class LambdaMetafactoryWrapper {
             = Collections.synchronizedMap(new WeakHashMap<>());
 
     static {
-        final Set<ClassLoader> classLoadersThisClassCannotOutlast = Collections.newSetFromMap(new IdentityHashMap<>());
+        final Set<ClassLoader> classLoadersThisClassCannotOutlast = Collections.newSetFromMap(new IdentityHashMap<>(3));
         classLoadersThisClassCannotOutlast.add(null); // for bootstrap CL
         classLoadersThisClassCannotOutlast.add(ClassLoader.getPlatformClassLoader());
         classLoadersThisClassCannotOutlast.add(ClassLoader.getSystemClassLoader());
