@@ -52,7 +52,7 @@ public class LambdaMetafactoryWrapper {
             = Collections.synchronizedMap(new WeakHashMap<>());
 
     static {
-        Set<ClassLoader> classLoadersThisClassCannotOutlast = Collections.newSetFromMap(new IdentityHashMap<>());
+        final Set<ClassLoader> classLoadersThisClassCannotOutlast = Collections.newSetFromMap(new IdentityHashMap<>());
         classLoadersThisClassCannotOutlast.add(null); // for bootstrap CL
         classLoadersThisClassCannotOutlast.add(ClassLoader.getPlatformClassLoader());
         classLoadersThisClassCannotOutlast.add(ClassLoader.getSystemClassLoader());
@@ -68,11 +68,11 @@ public class LambdaMetafactoryWrapper {
 
     private final MethodHandles.Lookup serialLookup;
 
-    public LambdaMetafactoryWrapper(MethodHandles.Lookup lookup) {
+    public LambdaMetafactoryWrapper(final MethodHandles.Lookup lookup) {
         this.lookup = lookup;
         try {
             this.serialLookup = MethodHandles.privateLookupIn(LambdaMetafactoryWrapper.class, lookup);
-        } catch (IllegalAccessException e) {
+        } catch (final IllegalAccessException e) {
             throw new RuntimeException(e);
         }
     }
@@ -84,50 +84,50 @@ public class LambdaMetafactoryWrapper {
     protected final MethodHandles.Lookup lookup;
 
     @SuppressWarnings("unchecked")
-    public <T> T wrapMethodHandle(MethodHandle implementation, Parameters<T> parameters) {
+    public <T> T wrapMethodHandle(final MethodHandle implementation, final Parameters<T> parameters) {
         return (T) METHOD_HANDLE_WRAPPERS
                 .computeIfAbsent(implementation, impl -> LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap())
                 .computeIfAbsent(parameters, params -> wrapMethodHandleUncached(implementation, params));
     }
 
-    private static ClassLoaderSpecificCache getClassLoaderSpecificCache(Class<?> clazz) {
-        ClassLoader loader = clazz.getClassLoader();
+    private static ClassLoaderSpecificCache getClassLoaderSpecificCache(final Class<?> clazz) {
+        final ClassLoader loader = clazz.getClassLoader();
         if (CLASS_LOADERS_THIS_CLASS_CANNOT_OUTLAST.contains(loader)) {
             return CACHE_FOR_IMMORTAL_CLASSLOADERS;
         }
         return CACHE_PER_UNLOADABLE_CLASSLOADER.computeIfAbsent(loader, l -> new ClassLoaderSpecificCache());
     }
 
-    protected <T> T wrapUncached(Executable implementation, Parameters<T> parameters) {
+    protected <T> T wrapUncached(final Executable implementation, final Parameters<T> parameters) {
         if (implementation instanceof Method && !parameters.capturedParameters.isEmpty()
                 && !Modifier.isStatic(implementation.getModifiers())) {
-            Class<?> receiverClass = parameters.capturedParameters.getFirst().getClass();
+            final Class<?> receiverClass = parameters.capturedParameters.getFirst().getClass();
             if (!implementation.getDeclaringClass().isAssignableFrom(receiverClass)) {
                 throw new IllegalArgumentException("First captured parameter for an instance method must be the "
                         + "receiver and must implement that method");
             }
         }
-        MethodHandle unreflectedImplementation = getUnreflectedImplementation(implementation);
+        final MethodHandle unreflectedImplementation = getUnreflectedImplementation(implementation);
         return wrapMethodHandleUncached(unreflectedImplementation, parameters);
     }
 
     @SuppressWarnings("unchecked")
-    protected final <T> T wrapMethodHandleUncached(MethodHandle implementation, Parameters<T> parameters) {
-        FunctionalInterfaceDescriptor descriptor = getDescriptor(parameters.functionalInterface);
-        MethodType implType = implementation.type();
+    protected final <T> T wrapMethodHandleUncached(final MethodHandle implementation, final Parameters<T> parameters) {
+        final FunctionalInterfaceDescriptor descriptor = getDescriptor(parameters.functionalInterface);
+        final MethodType implType = implementation.type();
         final int implParamCount = implType.parameterCount();
         List<Object> capturedParameters = parameters.capturedParameters;
         final int capturedParamCount = capturedParameters.size();
         final Class<?>[] capturedTypes;
         final MethodType invocationType;
         if (implParamCount > 0) {
-            Class<?> lastImplParamType = implType.parameterType(implParamCount - 1);
+            final Class<?> lastImplParamType = implType.parameterType(implParamCount - 1);
             if (lastImplParamType.isArray()
                     && (capturedParameters.isEmpty()
                     || !capturedParameters.getLast().getClass().isArray())
             ) {
                 final int varargsLength = capturedParamCount - implParamCount + 1;
-                Object varargs = Array.newInstance(lastImplParamType.componentType(), varargsLength);
+                final Object varargs = Array.newInstance(lastImplParamType.componentType(), varargsLength);
                 for (int i = 0; i < varargsLength; i++) {
                     Array.set(varargs, i, capturedParameters.get(i + implParamCount - 1));
                 }
@@ -139,7 +139,7 @@ public class LambdaMetafactoryWrapper {
             invocationType = implType.dropParameterTypes(0,
                     paramsReplacedWithCaptures);
             for (int i = 0; i < capturedParameters.size(); i++) {
-                Class<?> implParamType = implType.parameterType(i);
+                final Class<?> implParamType = implType.parameterType(i);
                 if (implParamType.isPrimitive()) {
                     capturedTypes[i] = implParamType;
                 }
@@ -148,22 +148,22 @@ public class LambdaMetafactoryWrapper {
             capturedTypes = EMPTY_CLASS_ARRAY;
             invocationType = implType;
         }
-        MethodType factoryType = MethodType.methodType(parameters.functionalInterface, capturedTypes);
-        MethodType descriptorType = descriptor.methodType;
+        final MethodType factoryType = MethodType.methodType(parameters.functionalInterface, capturedTypes);
+        final MethodType descriptorType = descriptor.methodType;
         try {
-            CallSite callSite;
+            final CallSite callSite;
             if (parameters.bridgeOverloadTypes.isEmpty() && parameters.markerInterfaces.isEmpty()
                     && !parameters.serializable) {
                 callSite = LambdaMetafactory.metafactory(lookup, descriptor.methodName, factoryType,
                         descriptorType, implementation, invocationType);
             } else {
-                ArrayList<Object> additionalParameters = new ArrayList<>(4);
+                final ArrayList<Object> additionalParameters = new ArrayList<>(4);
                 additionalParameters.add(descriptorType);
                 additionalParameters.add(implementation);
                 additionalParameters.add(invocationType);
                 additionalParameters.add(0);
                 int flags = 0;
-                MethodHandles.Lookup outputLookup;
+                final MethodHandles.Lookup outputLookup;
                 if (parameters.serializable) {
                     flags |= FLAG_SERIALIZABLE;
                     outputLookup = serialLookup;
@@ -188,30 +188,30 @@ public class LambdaMetafactoryWrapper {
                         additionalParameters.toArray());
             }
             return (T) callSite.getTarget().invokeWithArguments(capturedParameters);
-        } catch (Throwable t) {
+        } catch (final Throwable t) {
             throw (t instanceof RuntimeException) ? (RuntimeException) t : new RuntimeException(t);
         }
     }
 
-    private static Class<?> classForSlashDelimitedName(String slashDelimitedName) {
+    private static Class<?> classForSlashDelimitedName(final String slashDelimitedName) {
         try {
             return Class.forName(slashDelimitedName.replace('/', '.'));
-        } catch (ClassNotFoundException e) {
+        } catch (final ClassNotFoundException e) {
             throw new RuntimeException(e);
         }
     }
 
-    private static Executable findMethod(SerializedLambdaMethodDescription methodDescription) {
+    private static Executable findMethod(final SerializedLambdaMethodDescription methodDescription) {
         return FIND_METHOD_CACHE.computeIfAbsent(methodDescription, methodDescription_ -> {
             try {
-                Class<?> implClass = LambdaMetafactoryWrapper.classForSlashDelimitedName(methodDescription_.slashDelimitedClassName);
-                Class<?>[] parameterTypes = MethodType.fromMethodDescriptorString(methodDescription_.methodSignature,
+                final Class<?> implClass = LambdaMetafactoryWrapper.classForSlashDelimitedName(methodDescription_.slashDelimitedClassName);
+                final Class<?>[] parameterTypes = MethodType.fromMethodDescriptorString(methodDescription_.methodSignature,
                         LambdaMetafactoryWrapper.class.getClassLoader()).parameterArray();
                 if ("<init>".equals(methodDescription_.methodName)) {
                     return implClass.getDeclaredConstructor(parameterTypes);
                 }
                 return implClass.getDeclaredMethod(methodDescription_.methodName, parameterTypes);
-            } catch (NoSuchMethodException e) {
+            } catch (final NoSuchMethodException e) {
                 throw new RuntimeException(e);
             }
         });
@@ -219,13 +219,13 @@ public class LambdaMetafactoryWrapper {
     }
 
     @SuppressWarnings("unused") // used reflectively
-    private static Object $deserializeLambda$(SerializedLambda serializedLambda) {
+    private static Object $deserializeLambda$(final SerializedLambda serializedLambda) {
         return DESERIALIZATION_CACHE.computeIfAbsent(serializedLambda, lambda -> {
-            Executable implementation = LambdaMetafactoryWrapper.findMethod(new SerializedLambdaMethodDescription(
+            final Executable implementation = LambdaMetafactoryWrapper.findMethod(new SerializedLambdaMethodDescription(
                     lambda.getImplClass(), lambda.getImplMethodName(),
                     lambda.getImplMethodSignature()));
-            Class<?> functionalInterface = LambdaMetafactoryWrapper.classForSlashDelimitedName(lambda.getFunctionalInterfaceClass());
-            ArrayList<Object> capturedParams = new ArrayList<>(lambda.getCapturedArgCount());
+            final Class<?> functionalInterface = LambdaMetafactoryWrapper.classForSlashDelimitedName(lambda.getFunctionalInterfaceClass());
+            final ArrayList<Object> capturedParams = new ArrayList<>(lambda.getCapturedArgCount());
             for (int i = 0; i < lambda.getCapturedArgCount(); i++) {
                 capturedParams.add(lambda.getCapturedArg(i));
             }
@@ -237,7 +237,7 @@ public class LambdaMetafactoryWrapper {
         });
     }
 
-    protected <T> FunctionalInterfaceDescriptor getDescriptor(Class<? super T> functionalInterface) {
+    protected <T> FunctionalInterfaceDescriptor getDescriptor(final Class<? super T> functionalInterface) {
         if (!LambdaMetafactoryWrapper.isReferencedByClassLoader(functionalInterface)) {
             return ANON_AND_HIDDEN_DESCRIPTORS.computeIfAbsent(functionalInterface, this::getDescriptorUncached);
         }
@@ -245,11 +245,11 @@ public class LambdaMetafactoryWrapper {
                 .computeIfAbsent(functionalInterface, this::getDescriptorUncached);
     }
 
-    protected MethodHandle getUnreflectedImplementationUncached(Executable implementation) {
-        MethodHandles.Lookup lookup = this.lookup.in(implementation.getDeclaringClass());
+    protected MethodHandle getUnreflectedImplementationUncached(final Executable implementation) {
+        final MethodHandles.Lookup lookup = this.lookup.in(implementation.getDeclaringClass());
         try {
             implementation.setAccessible(true);
-            MethodHandle handle;
+            final MethodHandle handle;
             if (implementation instanceof Method) {
                 handle = lookup.unreflect((Method) implementation);
             } else if (implementation instanceof Constructor<?>) {
@@ -260,21 +260,21 @@ public class LambdaMetafactoryWrapper {
             try {
                 lookup.revealDirect(handle);
                 return handle;
-            } catch (IllegalArgumentException e) {
+            } catch (final IllegalArgumentException e) {
                 try {
                     return lookup.unreflect(MethodHandle.class.getDeclaredMethod("invokeExact", Object[].class)).bindTo(handle);
-                } catch (IllegalAccessException | NoSuchMethodException ex) {
+                } catch (final IllegalAccessException | NoSuchMethodException ex) {
                     throw new RuntimeException(ex);
                 }
             }
-        } catch (IllegalAccessException e) {
+        } catch (final IllegalAccessException e) {
             throw new RuntimeException(e);
         }
     }
 
     @SuppressWarnings("unchecked")
-    public <T> T wrap(Executable implementation, Parameters<T> parameters) {
-        Class<?> declaringClass = implementation.getDeclaringClass();
+    public <T> T wrap(final Executable implementation, final Parameters<T> parameters) {
+        final Class<?> declaringClass = implementation.getDeclaringClass();
         if (!LambdaMetafactoryWrapper.isReferencedByClassLoader(declaringClass)) {
             return (T) ANON_AND_HIDDEN_WRAPPERS
                     .computeIfAbsent(implementation, impl -> LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap())
@@ -284,7 +284,7 @@ public class LambdaMetafactoryWrapper {
                 .computeWrapperIfAbsent(implementation, parameters, this::wrapUncached);
     }
 
-    private static boolean isReferencedByClassLoader(Class<?> declaringClass) {
+    private static boolean isReferencedByClassLoader(final Class<?> declaringClass) {
         return !declaringClass.isAnonymousClass() && !declaringClass.isHidden();
     }
 
@@ -292,32 +292,32 @@ public class LambdaMetafactoryWrapper {
         return Collections.synchronizedMap(new WeakHashMap<>());
     }
 
-    protected <T> FunctionalInterfaceDescriptor getDescriptorUncached(Class<? super T> functionalInterface) {
-        List<Method> abstractMethods = Arrays.stream(functionalInterface.getMethods())
+    protected <T> FunctionalInterfaceDescriptor getDescriptorUncached(final Class<? super T> functionalInterface) {
+        final List<Method> abstractMethods = Arrays.stream(functionalInterface.getMethods())
                 .filter(method -> Modifier.isAbstract(method.getModifiers()))
                 .toList();
         if (abstractMethods.size() != 1) {
             throw new IllegalArgumentException("Expected class " + functionalInterface + " to have 1 abstract method, but it has " +
                     abstractMethods.size());
         }
-        Method abstractMethod = abstractMethods.getFirst();
-        MethodType abstractMethodType = null;
+        final Method abstractMethod = abstractMethods.getFirst();
+        final MethodType abstractMethodType;
         try {
             abstractMethodType = lookup.unreflect(abstractMethod).type();
-        } catch (IllegalAccessException e) {
+        } catch (final IllegalAccessException e) {
             throw new RuntimeException(e);
         }
         return new FunctionalInterfaceDescriptor(abstractMethodType.dropParameterTypes(0, 1), abstractMethod.getName(),
                 MethodType.methodType(functionalInterface));
     }
 
-    public <T> T wrap(Executable implementation, Class<? super T> functionalInterface) {
+    public <T> T wrap(final Executable implementation, final Class<? super T> functionalInterface) {
         return wrap(implementation, Parameters.<T>builder(functionalInterface)
                 .build());
     }
 
-    protected MethodHandle getUnreflectedImplementation(Executable implementation) {
-        Class<?> declaringClass = implementation.getDeclaringClass();
+    protected MethodHandle getUnreflectedImplementation(final Executable implementation) {
+        final Class<?> declaringClass = implementation.getDeclaringClass();
         if (!LambdaMetafactoryWrapper.isReferencedByClassLoader(declaringClass)) {
             return ANON_AND_HIDDEN_UNREFLECTED.computeIfAbsent(implementation, this::getUnreflectedImplementationUncached);
         }
@@ -326,7 +326,7 @@ public class LambdaMetafactoryWrapper {
     }
 
     private static class DefaultInstanceLazyLoader {
-        static LambdaMetafactoryWrapper DEFAULT_INSTANCE = new LambdaMetafactoryWrapper(MethodHandles.lookup());
+        static final LambdaMetafactoryWrapper DEFAULT_INSTANCE = new LambdaMetafactoryWrapper(MethodHandles.lookup());
     }
 
     public static LambdaMetafactoryWrapper getDefaultInstance() {
@@ -346,7 +346,7 @@ public class LambdaMetafactoryWrapper {
             List<Object> capturedParameters,
             List<Class<?>> markerInterfaces
     ) {
-        public static <T> Builder<T> builder(Class<? super T> functionalInterface) {
+        public static <T> Builder<T> builder(final Class<? super T> functionalInterface) {
             return new Builder<>(functionalInterface);
         }
 
@@ -358,22 +358,22 @@ public class LambdaMetafactoryWrapper {
             private final ArrayList<Class<?>> markerInterfaces = new ArrayList<>();
             private final Class<? super T> functionalInterface;
 
-            Builder(Class<? super T> functionalInterface) {
+            Builder(final Class<? super T> functionalInterface) {
                 this.functionalInterface = requireNonNull(functionalInterface);
             }
 
-            public Builder<T> serializable(boolean serializable) {
+            public Builder<T> serializable(final boolean serializable) {
                 this.serializable = serializable;
                 return this;
             }
 
             @SuppressWarnings("UnusedReturnValue")
-            public Builder<T> addMarkerInterface(Class<?> markerInterface) {
+            public Builder<T> addMarkerInterface(final Class<?> markerInterface) {
                 markerInterfaces.add(requireNonNull(markerInterface));
                 return this;
             }
 
-            public Builder<T> addMarkerInterfaces(Collection<? extends Class<?>> markerInterfaces) {
+            public Builder<T> addMarkerInterfaces(final Collection<? extends Class<?>> markerInterfaces) {
                 this.markerInterfaces.addAll(markerInterfaces);
                 return this;
             }
@@ -383,12 +383,12 @@ public class LambdaMetafactoryWrapper {
                 return this;
             }
 
-            public Builder<T> addBridgeOverload(MethodType bridgeOverloadType) {
+            public Builder<T> addBridgeOverload(final MethodType bridgeOverloadType) {
                 this.bridgeOverloadTypes.add(requireNonNull(bridgeOverloadType));
                 return this;
             }
 
-            public Builder<T> addBridgeOverloads(Collection<? extends MethodType> bridgeOverloadTypes) {
+            public Builder<T> addBridgeOverloads(final Collection<? extends MethodType> bridgeOverloadTypes) {
                 this.bridgeOverloadTypes.addAll(bridgeOverloadTypes);
                 return this;
             }
@@ -398,12 +398,12 @@ public class LambdaMetafactoryWrapper {
                 return this;
             }
 
-            public Builder<T> addCapturedParameter(Object capturedParameter) {
+            public Builder<T> addCapturedParameter(final Object capturedParameter) {
                 capturedParameters.add(capturedParameter);
                 return this;
             }
 
-            public Builder<T> addCapturedParameters(Collection<?> capturedParameters) {
+            public Builder<T> addCapturedParameters(final Collection<?> capturedParameters) {
                 this.capturedParameters.addAll(capturedParameters);
                 return this;
             }
@@ -430,7 +430,7 @@ public class LambdaMetafactoryWrapper {
     }
 
     @Override
-    public boolean equals(Object obj) {
+    public boolean equals(final Object obj) {
         return (obj == this) || obj != null &&
                 (obj.getClass() == getClass() && lookup == ((LambdaMetafactoryWrapper)obj).lookup);
     }
@@ -447,8 +447,8 @@ public class LambdaMetafactoryWrapper {
         final ConcurrentHashMap<Executable, Map<Parameters<?>, Object>> cachedWrappers
                 = new ConcurrentHashMap<>();
 
-        Object computeWrapperIfAbsent(Executable implementation, Parameters<?> parameters,
-                          BiFunction<Executable, Parameters<?>, Object> wrappingFunction) {
+        Object computeWrapperIfAbsent(final Executable implementation, final Parameters<?> parameters,
+                                      final BiFunction<Executable, Parameters<?>, Object> wrappingFunction) {
             return cachedWrappers.computeIfAbsent(implementation, impl -> LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap())
                     .computeIfAbsent(parameters, params -> wrappingFunction.apply(implementation, params));
         }
