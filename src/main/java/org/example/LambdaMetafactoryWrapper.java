@@ -14,15 +14,8 @@ import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.IdentityHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
-import java.util.WeakHashMap;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.BiFunction;
 import java.util.logging.Logger;
 import static java.lang.invoke.LambdaMetafactory.FLAG_BRIDGES;
 import static java.lang.invoke.LambdaMetafactory.FLAG_MARKERS;
@@ -33,43 +26,13 @@ public class LambdaMetafactoryWrapper {
     @SuppressWarnings("unused")
     private static final Logger LOG = Logger.getLogger(LambdaMetafactoryWrapper.class.getSimpleName());
     private static final Class<?>[] EMPTY_CLASS_ARRAY = new Class<?>[0];
-    private static final Set<ClassLoader> CLASS_LOADERS_THIS_CLASS_CANNOT_OUTLAST;
-    private static final Map<ClassLoader, ClassLoaderSpecificCache> CACHE_PER_UNLOADABLE_CLASSLOADER
-            = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-    private static final ClassLoaderSpecificCache CACHE_FOR_IMMORTAL_CLASSLOADERS = new ClassLoaderSpecificCache();
-    private static final Map<Class<?>, FunctionalInterfaceDescriptor> ANON_AND_HIDDEN_DESCRIPTORS
-            = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-    private static final Map<Executable, MethodHandle> ANON_AND_HIDDEN_UNREFLECTED
-            = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-    private static final Map<Executable, Map<Parameters<?>, Object>> ANON_AND_HIDDEN_WRAPPERS
-            = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-    private static final Map<MethodHandle, Map<Parameters<?>, Object>> METHOD_HANDLE_WRAPPERS
-            = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-    // Don't want identity semantics
-    private static final Map<SerializedLambda, Object> DESERIALIZATION_CACHE
-            = Collections.synchronizedMap(new WeakHashMap<>());
-    private static final Map<SerializedLambdaMethodDescription, Executable> FIND_METHOD_CACHE
-            = Collections.synchronizedMap(new WeakHashMap<>());
-
-    static {
-        final Set<ClassLoader> classLoadersThisClassCannotOutlast = Collections.newSetFromMap(new IdentityHashMap<>(3));
-        classLoadersThisClassCannotOutlast.add(null); // for bootstrap CL
-        classLoadersThisClassCannotOutlast.add(ClassLoader.getPlatformClassLoader());
-        classLoadersThisClassCannotOutlast.add(ClassLoader.getSystemClassLoader());
-        if (isReferencedByClassLoader(LambdaMetafactoryWrapper.class)) {
-            ClassLoader myLoader = LambdaMetafactoryWrapper.class.getClassLoader();
-            while (!classLoadersThisClassCannotOutlast.contains(myLoader)) {
-                classLoadersThisClassCannotOutlast.add(myLoader);
-                myLoader = myLoader.getParent();
-            }
-        }
-        CLASS_LOADERS_THIS_CLASS_CANNOT_OUTLAST = classLoadersThisClassCannotOutlast;
-    }
 
     private final MethodHandles.Lookup serialLookup;
+    private final LambdaMetafactoryCacheManager cacheManager;
 
-    public LambdaMetafactoryWrapper(final MethodHandles.Lookup lookup) {
+    public LambdaMetafactoryWrapper(final MethodHandles.Lookup lookup, LambdaMetafactoryCacheManager cacheManager) {
         this.lookup = lookup;
+        this.cacheManager = cacheManager;
         try {
             this.serialLookup = MethodHandles.privateLookupIn(LambdaMetafactoryWrapper.class, lookup);
         } catch (final IllegalAccessException e) {
@@ -77,36 +40,30 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
-    public static void clearCaches() {
-        CACHE_FOR_IMMORTAL_CLASSLOADERS.clear();
-        CACHE_PER_UNLOADABLE_CLASSLOADER.clear();
-        ANON_AND_HIDDEN_DESCRIPTORS.clear();
-        ANON_AND_HIDDEN_UNREFLECTED.clear();
-        ANON_AND_HIDDEN_WRAPPERS.clear();
-        METHOD_HANDLE_WRAPPERS.clear();
-        FIND_METHOD_CACHE.clear();
-        DESERIALIZATION_CACHE.clear();
-    }
-
     public LambdaMetafactoryWrapper() {
-        this(MethodHandles.lookup());
+        this(MethodHandles.lookup(), LambdaMetafactoryDefaultCacheManager.getInstance());
     }
 
     protected final MethodHandles.Lookup lookup;
 
-    @SuppressWarnings("unchecked")
-    public <T> T wrapMethodHandle(final MethodHandle implementation, final Parameters<T> parameters) {
-        return (T) METHOD_HANDLE_WRAPPERS
-                .computeIfAbsent(implementation, impl -> LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap())
-                .computeIfAbsent(parameters, params -> wrapMethodHandleUncached(implementation, params));
+    static Object deserializeLambdaUncached(SerializedLambda lambda) {
+        final Executable implementation = getDefaultInstance().findMethod(new SerializedLambdaMethodDescription(
+                lambda.getImplClass(), lambda.getImplMethodName(),
+                lambda.getImplMethodSignature()));
+        final Class<?> functionalInterface = LambdaMetafactoryWrapper.classForSlashDelimitedName(lambda.getFunctionalInterfaceClass());
+        final ArrayList<Object> capturedParams = new ArrayList<>(lambda.getCapturedArgCount());
+        for (int i = 0; i < lambda.getCapturedArgCount(); i++) {
+            capturedParams.add(lambda.getCapturedArg(i));
+        }
+        return getDefaultInstance().wrap(implementation,
+                Parameters.builder(functionalInterface)
+                        .serializable(true)
+                        .addCapturedParameters(capturedParams)
+                        .build());
     }
 
-    private static ClassLoaderSpecificCache getClassLoaderSpecificCache(final Class<?> clazz) {
-        final ClassLoader loader = clazz.getClassLoader();
-        if (CLASS_LOADERS_THIS_CLASS_CANNOT_OUTLAST.contains(loader)) {
-            return CACHE_FOR_IMMORTAL_CLASSLOADERS;
-        }
-        return CACHE_PER_UNLOADABLE_CLASSLOADER.computeIfAbsent(loader, l -> new ClassLoaderSpecificCache());
+    public <T> T wrapMethodHandle(final MethodHandle implementation, final Parameters<T> parameters) {
+        return cacheManager.wrapMethodHandle(this, implementation, parameters);
     }
 
     protected <T> T wrapUncached(final Executable implementation, final Parameters<T> parameters) {
@@ -212,48 +169,31 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
-    private static Executable findMethod(final SerializedLambdaMethodDescription methodDescription) {
-        return FIND_METHOD_CACHE.computeIfAbsent(methodDescription, methodDescription_ -> {
-            try {
-                final Class<?> implClass = LambdaMetafactoryWrapper.classForSlashDelimitedName(methodDescription_.slashDelimitedClassName);
-                final Class<?>[] parameterTypes = MethodType.fromMethodDescriptorString(methodDescription_.methodSignature,
-                        LambdaMetafactoryWrapper.class.getClassLoader()).parameterArray();
-                if ("<init>".equals(methodDescription_.methodName)) {
-                    return implClass.getDeclaredConstructor(parameterTypes);
-                }
-                return implClass.getDeclaredMethod(methodDescription_.methodName, parameterTypes);
-            } catch (final NoSuchMethodException e) {
-                throw new RuntimeException(e);
+    Executable findMethodUncached(final SerializedLambdaMethodDescription methodDescription) {
+        try {
+            final Class<?> implClass = LambdaMetafactoryWrapper.classForSlashDelimitedName(methodDescription.slashDelimitedClassName);
+            final Class<?>[] parameterTypes = MethodType.fromMethodDescriptorString(methodDescription.methodSignature,
+                    lookup.lookupClass().getClassLoader()).parameterArray();
+            if ("<init>".equals(methodDescription.methodName)) {
+                return implClass.getDeclaredConstructor(parameterTypes);
             }
-        });
+            return implClass.getDeclaredMethod(methodDescription.methodName, parameterTypes);
+        } catch (final NoSuchMethodException e) {
+            throw new RuntimeException(e);
+        }
+    }
 
+    private Executable findMethod(final SerializedLambdaMethodDescription methodDescription) {
+        return cacheManager.findMethod(this, methodDescription);
     }
 
     @SuppressWarnings("unused") // used reflectively
     private static Object $deserializeLambda$(final SerializedLambda serializedLambda) {
-        return DESERIALIZATION_CACHE.computeIfAbsent(serializedLambda, lambda -> {
-            final Executable implementation = LambdaMetafactoryWrapper.findMethod(new SerializedLambdaMethodDescription(
-                    lambda.getImplClass(), lambda.getImplMethodName(),
-                    lambda.getImplMethodSignature()));
-            final Class<?> functionalInterface = LambdaMetafactoryWrapper.classForSlashDelimitedName(lambda.getFunctionalInterfaceClass());
-            final ArrayList<Object> capturedParams = new ArrayList<>(lambda.getCapturedArgCount());
-            for (int i = 0; i < lambda.getCapturedArgCount(); i++) {
-                capturedParams.add(lambda.getCapturedArg(i));
-            }
-            return getDefaultInstance().wrap(implementation,
-                    Parameters.builder(functionalInterface)
-                            .serializable(true)
-                            .addCapturedParameters(capturedParams)
-                            .build());
-        });
+        return getDefaultInstance().cacheManager.deserializeLambda(serializedLambda);
     }
 
     protected <T> FunctionalInterfaceDescriptor getDescriptor(final Class<? super T> functionalInterface) {
-        if (!LambdaMetafactoryWrapper.isReferencedByClassLoader(functionalInterface)) {
-            return ANON_AND_HIDDEN_DESCRIPTORS.computeIfAbsent(functionalInterface, this::getDescriptorUncached);
-        }
-        return LambdaMetafactoryWrapper.getClassLoaderSpecificCache(functionalInterface).descriptors
-                .computeIfAbsent(functionalInterface, this::getDescriptorUncached);
+        return cacheManager.getDescriptor(this, functionalInterface);
     }
 
     protected MethodHandle getUnreflectedImplementationUncached(final Executable implementation) {
@@ -283,24 +223,8 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
-    @SuppressWarnings("unchecked")
     public <T> T wrap(final Executable implementation, final Parameters<T> parameters) {
-        final Class<?> declaringClass = implementation.getDeclaringClass();
-        if (!LambdaMetafactoryWrapper.isReferencedByClassLoader(declaringClass)) {
-            return (T) ANON_AND_HIDDEN_WRAPPERS
-                    .computeIfAbsent(implementation, impl -> LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap())
-                    .computeIfAbsent(parameters, params -> wrap(implementation, params));
-        }
-        return (T) LambdaMetafactoryWrapper.getClassLoaderSpecificCache(declaringClass)
-                .computeWrapperIfAbsent(implementation, parameters, this::wrapUncached);
-    }
-
-    private static boolean isReferencedByClassLoader(final Class<?> declaringClass) {
-        return !declaringClass.isAnonymousClass() && !declaringClass.isHidden();
-    }
-
-    private static <K, V> Map<K, V> newThreadSafeWeakKeyMap() {
-        return Collections.synchronizedMap(new WeakHashMap<>());
+        return cacheManager.wrap(this, implementation, parameters);
     }
 
     protected <T> FunctionalInterfaceDescriptor getDescriptorUncached(final Class<? super T> functionalInterface) {
@@ -328,23 +252,19 @@ public class LambdaMetafactoryWrapper {
     }
 
     protected MethodHandle getUnreflectedImplementation(final Executable implementation) {
-        final Class<?> declaringClass = implementation.getDeclaringClass();
-        if (!LambdaMetafactoryWrapper.isReferencedByClassLoader(declaringClass)) {
-            return ANON_AND_HIDDEN_UNREFLECTED.computeIfAbsent(implementation, this::getUnreflectedImplementationUncached);
-        }
-        return LambdaMetafactoryWrapper.getClassLoaderSpecificCache(declaringClass)
-                .unreflected.computeIfAbsent(implementation, this::getUnreflectedImplementationUncached);
+        return cacheManager.getUnreflectedImplementation(this, implementation);
     }
 
     private static class DefaultInstanceLazyLoader {
-        static final LambdaMetafactoryWrapper DEFAULT_INSTANCE = new LambdaMetafactoryWrapper(MethodHandles.lookup());
+        static final LambdaMetafactoryWrapper DEFAULT_INSTANCE = new LambdaMetafactoryWrapper(MethodHandles.lookup(),
+                LambdaMetafactoryDefaultCacheManager.getInstance());
     }
 
     public static LambdaMetafactoryWrapper getDefaultInstance() {
         return DefaultInstanceLazyLoader.DEFAULT_INSTANCE;
     }
 
-    protected record FunctionalInterfaceDescriptor(
+    public record FunctionalInterfaceDescriptor(
             MethodType methodType,
             String methodName,
             MethodType nonCapturingReturning) {
@@ -446,28 +366,9 @@ public class LambdaMetafactoryWrapper {
                 (obj.getClass() == getClass() && lookup == ((LambdaMetafactoryWrapper)obj).lookup);
     }
 
-    private record SerializedLambdaMethodDescription(
+    public record SerializedLambdaMethodDescription(
             String slashDelimitedClassName,
             String methodName,
             String methodSignature
     ) {}
-
-    private static class ClassLoaderSpecificCache {
-        final ConcurrentHashMap<Class<?>, FunctionalInterfaceDescriptor> descriptors = new ConcurrentHashMap<>();
-        final ConcurrentHashMap<Executable, MethodHandle> unreflected = new ConcurrentHashMap<>();
-        final ConcurrentHashMap<Executable, Map<Parameters<?>, Object>> cachedWrappers
-                = new ConcurrentHashMap<>();
-
-        Object computeWrapperIfAbsent(final Executable implementation, final Parameters<?> parameters,
-                                      final BiFunction<Executable, Parameters<?>, Object> wrappingFunction) {
-            return cachedWrappers.computeIfAbsent(implementation, impl -> LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap())
-                    .computeIfAbsent(parameters, params -> wrappingFunction.apply(implementation, params));
-        }
-
-        void clear() {
-            descriptors.clear();
-            unreflected.clear();
-            cachedWrappers.clear();
-        }
-    }
 }
