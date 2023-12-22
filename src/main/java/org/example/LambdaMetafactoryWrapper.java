@@ -43,8 +43,6 @@ public class LambdaMetafactoryWrapper {
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
     private static final Map<Executable, Map<Parameters<?>, Object>> ANON_AND_HIDDEN_WRAPPERS
             = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-    private static final Map<MethodHandle, Map<Parameters<?>, Object>> METHOD_HANDLE_WRAPPERS
-            = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
 
     static {
         final Set<ClassLoader> classLoadersThisClassCannotOutlast = Collections.newSetFromMap(new IdentityHashMap<>(3));
@@ -81,9 +79,7 @@ public class LambdaMetafactoryWrapper {
 
     @SuppressWarnings("unchecked")
     public <T> T wrapMethodHandle(final MethodHandle implementation, final Parameters<T> parameters) {
-        return (T) METHOD_HANDLE_WRAPPERS
-                .computeIfAbsent(implementation, impl -> LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap())
-                .computeIfAbsent(parameters, params -> wrapMethodHandleUncached(implementation, params));
+        return cacheManager.wrapMethodHandle(this, implementation, parameters);
     }
 
     private static ClassLoaderSpecificCache getClassLoaderSpecificCache(final Class<?> clazz) {
@@ -287,7 +283,7 @@ public class LambdaMetafactoryWrapper {
         return !declaringClass.isAnonymousClass() && !declaringClass.isHidden();
     }
 
-    private static <K, V> Map<K, V> newThreadSafeWeakKeyMap() {
+    static <K, V> Map<K, V> newThreadSafeWeakKeyMap() {
         return Collections.synchronizedMap(new WeakHashMap<>());
     }
 
