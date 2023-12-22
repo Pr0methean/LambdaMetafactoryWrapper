@@ -3,6 +3,11 @@ package org.example;
 import nl.jqno.equalsverifier.EqualsVerifier;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.lang.invoke.MethodHandles;
 import java.util.Objects;
 import java.util.function.Function;
@@ -121,5 +126,25 @@ class LambdaMetafactoryWrapperTest {
         builder.addCapturedParameter("Hello");
         builder.addCapturedParameter("world");
         createWrapper().wrap(Objects.class.getDeclaredMethod("hash", Object[].class), builder.build()).getAsInt();
+    }
+
+    @Test
+    public void testSerialization() throws NoSuchMethodException, IOException, ClassNotFoundException {
+        LambdaMetafactoryWrapper.Parameters.Builder<IntSupplier>
+                builder = LambdaMetafactoryWrapper.Parameters.builder(IntSupplier.class);
+        builder.addCapturedParameter("Hello");
+        builder.addCapturedParameter("world");
+        builder.serializable(true);
+        IntSupplier original = createWrapper()
+                .wrap(Objects.class.getDeclaredMethod("hash", Object[].class), builder.build());
+        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();
+             ObjectOutputStream oos = new ObjectOutputStream(baos)) {
+            oos.writeObject(original);
+            try (ByteArrayInputStream bais = new ByteArrayInputStream(baos.toByteArray());
+                 ObjectInputStream ois = new ObjectInputStream(bais)) {
+                IntSupplier copy = (IntSupplier) ois.readObject();
+                assertEquals(original.getAsInt(), copy.getAsInt());
+            }
+        }
     }
 }
