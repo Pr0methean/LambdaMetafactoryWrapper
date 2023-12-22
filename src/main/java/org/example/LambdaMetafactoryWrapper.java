@@ -15,11 +15,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Logger;
@@ -34,7 +32,7 @@ public class LambdaMetafactoryWrapper {
     private static final Class<?>[] EMPTY_CLASS_ARRAY = new Class<?>[0];
 
     private final MethodHandles.Lookup serialLookup;
-    private final LambdaMetafactoryCacheManager cacheManager = new LambdaMetafactoryCacheManager();
+    private final LambdaMetafactoryCacheManager cacheManager = new LambdaMetafactoryDefaultCacheManager();
 
     public LambdaMetafactoryWrapper(final MethodHandles.Lookup lookup) {
         this.lookup = lookup;
@@ -231,10 +229,6 @@ public class LambdaMetafactoryWrapper {
     @SuppressWarnings("unchecked")
     public <T> T wrap(final Executable implementation, final Parameters<T> parameters) {
         return cacheManager.wrap(this, implementation, parameters);
-    }
-
-    private static boolean isReferencedByClassLoader(final Class<?> declaringClass) {
-        return !declaringClass.isAnonymousClass() && !declaringClass.isHidden();
     }
 
     static <K, V> Map<K, V> newThreadSafeWeakKeyMap() {
