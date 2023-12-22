@@ -5,6 +5,11 @@ import java.lang.invoke.SerializedLambda;
 import java.lang.reflect.Executable;
 
 public class LambdaMetafactoryNoopCacheManager implements LambdaMetafactoryCacheManager {
+    private static final LambdaMetafactoryNoopCacheManager INSTANCE = new LambdaMetafactoryNoopCacheManager();
+    protected LambdaMetafactoryNoopCacheManager() {}
+    public static LambdaMetafactoryNoopCacheManager getInstance() {
+        return INSTANCE;
+    }
     @Override
     public <T> T wrapMethodHandle(LambdaMetafactoryWrapper wrapper, MethodHandle implementation, LambdaMetafactoryWrapper.Parameters<T> parameters) {
         return wrapper.wrapMethodHandleUncached(implementation, parameters);

@@ -11,7 +11,7 @@ import java.util.WeakHashMap;
 import java.util.concurrent.ConcurrentHashMap;
 
 public class LambdaMetafactoryDefaultCacheManager implements LambdaMetafactoryCacheManager {
-    private LambdaMetafactoryDefaultCacheManager() {}
+    protected LambdaMetafactoryDefaultCacheManager() {}
     private static final LambdaMetafactoryDefaultCacheManager INSTANCE = new LambdaMetafactoryDefaultCacheManager();
     // Don't want identity semantics
     private static final Map<SerializedLambda, Object> DESERIALIZATION_CACHE
