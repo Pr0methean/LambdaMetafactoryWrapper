@@ -13,6 +13,8 @@ import java.util.function.ToIntBiFunction;
 import static org.junit.jupiter.api.Assertions.*;
 
 class LambdaMetafactoryWrapperTest {
+    // TODO: Caching, bridges, marker interfaces
+
     protected LambdaMetafactoryWrapper createWrapper() {
         return new LambdaMetafactoryWrapper(MethodHandles.lookup());
     }
