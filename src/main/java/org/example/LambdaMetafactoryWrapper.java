@@ -32,7 +32,7 @@ public class LambdaMetafactoryWrapper {
     private static final Class<?>[] EMPTY_CLASS_ARRAY = new Class<?>[0];
 
     private final MethodHandles.Lookup serialLookup;
-    private final LambdaMetafactoryCacheManager cacheManager = new LambdaMetafactoryDefaultCacheManager();
+    private final LambdaMetafactoryCacheManager cacheManager = LambdaMetafactoryDefaultCacheManager.getInstance();
 
     public LambdaMetafactoryWrapper(final MethodHandles.Lookup lookup) {
         this.lookup = lookup;
@@ -226,7 +226,6 @@ public class LambdaMetafactoryWrapper {
         }
     }
 
-    @SuppressWarnings("unchecked")
     public <T> T wrap(final Executable implementation, final Parameters<T> parameters) {
         return cacheManager.wrap(this, implementation, parameters);
     }

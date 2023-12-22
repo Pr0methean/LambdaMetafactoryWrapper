@@ -11,6 +11,11 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.example.LambdaMetafactoryWrapper.Parameters;
 
 public class LambdaMetafactoryDefaultCacheManager implements LambdaMetafactoryCacheManager {
+    private LambdaMetafactoryDefaultCacheManager() {}
+    private static final LambdaMetafactoryDefaultCacheManager INSTANCE = new LambdaMetafactoryDefaultCacheManager();
+    public static LambdaMetafactoryDefaultCacheManager getInstance() {
+        return INSTANCE;
+    }
     private static final Map<SerializedLambda, Object> DESERIALIZATION_CACHE
             = Collections.synchronizedMap(new WeakHashMap<>());
     private static final Map<LambdaMetafactoryWrapper.SerializedLambdaMethodDescription, Executable> FIND_METHOD_CACHE
