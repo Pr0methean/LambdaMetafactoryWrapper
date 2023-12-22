@@ -44,6 +44,7 @@ class LambdaMetafactoryWrapperTest {
         EqualsVerifier.forClass(LambdaMetafactoryWrapper.class)
                 .withPrefabValues(MethodHandles.Lookup.class, MethodHandles.lookup(), MethodHandles.publicLookup())
                 .withNonnullFields("lookup")
+                .withIgnoredFields("serialLookup")
                 .usingGetClass()
                 .verify();
     }
