@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.logging.Logger;
 import static java.lang.invoke.LambdaMetafactory.FLAG_BRIDGES;
 import static java.lang.invoke.LambdaMetafactory.FLAG_MARKERS;
@@ -197,10 +198,9 @@ public class LambdaMetafactoryWrapper {
     }
 
     protected MethodHandle getUnreflectedImplementationUncached(final Executable implementation) {
-        final MethodHandles.Lookup lookup = this.lookup.in(implementation.getDeclaringClass());
         try {
             implementation.setAccessible(true);
-            final MethodHandle handle;
+            MethodHandle handle;
             if (implementation instanceof Method) {
                 handle = lookup.unreflect((Method) implementation);
             } else if (implementation instanceof Constructor<?>) {
@@ -208,16 +208,27 @@ public class LambdaMetafactoryWrapper {
             } else {
                 throw new IllegalArgumentException(implementation + " is not a Constructor or Method");
             }
-            try {
-                lookup.revealDirect(handle);
-                return handle;
-            } catch (final IllegalArgumentException e) {
+            while (true) {
                 try {
-                    return lookup.unreflect(MethodHandle.class.getDeclaredMethod("invokeExact", Object[].class)).bindTo(handle);
-                } catch (final IllegalAccessException | NoSuchMethodException ex) {
-                    throw new RuntimeException(ex);
+                    lookup.revealDirect(handle);
+                    return handle;
+                } catch (final IllegalArgumentException e) {
+                    try {
+                        handle = (MethodHandle) LambdaMetafactory.metafactory(
+                                lookup,
+                                "apply",
+                                MethodType.methodType(Function.class, MethodHandle.class),
+                                handle.type().erase(),
+                                MethodHandles.exactInvoker(handle.type()),
+                                handle.type()
+                        ).getTarget().invokeExact(implementation);
+                        handle = lookup.unreflect(MethodHandle.class.getDeclaredMethod("invokeExact", Object[].class)).bindTo(handle);
+                    } catch (final Throwable ex) {
+                        throw new RuntimeException(ex);
+                    }
                 }
             }
+
         } catch (final IllegalAccessException e) {
             throw new RuntimeException(e);
         }

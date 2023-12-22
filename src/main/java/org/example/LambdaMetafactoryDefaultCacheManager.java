@@ -68,8 +68,8 @@ public class LambdaMetafactoryDefaultCacheManager implements LambdaMetafactoryCa
         classLoadersThisClassCannotOutlast.add(null); // for bootstrap CL
         classLoadersThisClassCannotOutlast.add(ClassLoader.getPlatformClassLoader());
         classLoadersThisClassCannotOutlast.add(ClassLoader.getSystemClassLoader());
-        if (isReferencedByClassLoader(LambdaMetafactoryWrapper.class)) {
-            ClassLoader myLoader = LambdaMetafactoryWrapper.class.getClassLoader();
+        if (isReferencedByClassLoader(LambdaMetafactoryDefaultCacheManager.class)) {
+            ClassLoader myLoader = LambdaMetafactoryDefaultCacheManager.class.getClassLoader();
             while (!classLoadersThisClassCannotOutlast.contains(myLoader)) {
                 classLoadersThisClassCannotOutlast.add(myLoader);
                 myLoader = myLoader.getParent();
@@ -97,12 +97,15 @@ public class LambdaMetafactoryDefaultCacheManager implements LambdaMetafactoryCa
 
     @Override
     public MethodHandle getUnreflectedImplementation(LambdaMetafactoryWrapper wrapper, Executable implementation) {
+        /*
         final Class<?> declaringClass = implementation.getDeclaringClass();
         if (!isReferencedByClassLoader(declaringClass)) {
             return ANON_AND_HIDDEN_UNREFLECTED.computeIfAbsent(implementation, wrapper::getUnreflectedImplementationUncached);
         }
         return getClassLoaderSpecificCache(declaringClass)
                 .unreflected.computeIfAbsent(implementation, wrapper::getUnreflectedImplementationUncached);
+         */
+        return wrapper.getUnreflectedImplementationUncached(implementation);
     }
 
     @SuppressWarnings("unchecked")
