@@ -32,27 +32,6 @@ public class LambdaMetafactoryWrapper {
     @SuppressWarnings("unused")
     private static final Logger LOG = Logger.getLogger(LambdaMetafactoryWrapper.class.getSimpleName());
     private static final Class<?>[] EMPTY_CLASS_ARRAY = new Class<?>[0];
-    private static final Set<ClassLoader> CLASS_LOADERS_THIS_CLASS_CANNOT_OUTLAST;
-    private static final Map<ClassLoader, ClassLoaderSpecificCache> CACHE_PER_UNLOADABLE_CLASSLOADER
-            = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-    private static final ClassLoaderSpecificCache CACHE_FOR_IMMORTAL_CLASSLOADERS = new ClassLoaderSpecificCache();
-    private static final Map<Class<?>, FunctionalInterfaceDescriptor> ANON_AND_HIDDEN_DESCRIPTORS
-            = LambdaMetafactoryWrapper.newThreadSafeWeakKeyMap();
-
-    static {
-        final Set<ClassLoader> classLoadersThisClassCannotOutlast = Collections.newSetFromMap(new IdentityHashMap<>(3));
-        classLoadersThisClassCannotOutlast.add(null); // for bootstrap CL
-        classLoadersThisClassCannotOutlast.add(ClassLoader.getPlatformClassLoader());
-        classLoadersThisClassCannotOutlast.add(ClassLoader.getSystemClassLoader());
-        if (isReferencedByClassLoader(LambdaMetafactoryWrapper.class)) {
-            ClassLoader myLoader = LambdaMetafactoryWrapper.class.getClassLoader();
-            while (!classLoadersThisClassCannotOutlast.contains(myLoader)) {
-                classLoadersThisClassCannotOutlast.add(myLoader);
-                myLoader = myLoader.getParent();
-            }
-        }
-        CLASS_LOADERS_THIS_CLASS_CANNOT_OUTLAST = classLoadersThisClassCannotOutlast;
-    }
 
     private final MethodHandles.Lookup serialLookup;
     private final LambdaMetafactoryCacheManager cacheManager = new LambdaMetafactoryCacheManager();
@@ -74,14 +53,6 @@ public class LambdaMetafactoryWrapper {
 
     public <T> T wrapMethodHandle(final MethodHandle implementation, final Parameters<T> parameters) {
         return cacheManager.wrapMethodHandle(this, implementation, parameters);
-    }
-
-    private static ClassLoaderSpecificCache getClassLoaderSpecificCache(final Class<?> clazz) {
-        final ClassLoader loader = clazz.getClassLoader();
-        if (CLASS_LOADERS_THIS_CLASS_CANNOT_OUTLAST.contains(loader)) {
-            return CACHE_FOR_IMMORTAL_CLASSLOADERS;
-        }
-        return CACHE_PER_UNLOADABLE_CLASSLOADER.computeIfAbsent(loader, l -> new ClassLoaderSpecificCache());
     }
 
     protected <T> T wrapUncached(final Executable implementation, final Parameters<T> parameters) {
